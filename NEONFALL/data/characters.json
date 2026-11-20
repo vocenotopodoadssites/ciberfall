@@ -1,0 +1,194 @@
+{
+  "version": "1.0.0",
+  "classes": [
+    {
+      "id": "berserker",
+      "name": "BERSERKER",
+      "role": "Corpo a Corpo / Alta Resistência",
+      "description": "Guerreiro cibernético equipado com lâminas energéticas duplas, blindagem reforçada e golpes em arco devastadores.",
+      "weaponType": "ENERGY_BLADES",
+      "unlockCost": 0,
+      "unlockedByDefault": true,
+      "stats": {
+        "maxHp": 160,
+        "maxShield": 40,
+        "moveSpeed": 6.4,
+        "attackDamage": 28,
+        "attackCooldown": 0.55,
+        "attackRange": 4.2,
+        "critChance": 0.14,
+        "armor": 8
+      },
+      "activeSkillId": "skill_berserker_nova",
+      "passiveSkillId": "passive_berserker_rage",
+      "palette": {
+        "primary": "#1E2433",
+        "secondary": "#FF2A55",
+        "visor": "#FF6A00",
+        "weapon": "#FF3B6B"
+      }
+    },
+    {
+      "id": "engenheiro",
+      "name": "ENGENHEIRO",
+      "role": "Drones & Torres Automáticas",
+      "description": "Especialista em robótica tática que implanta torres automáticas e drones orbitais de suporte contínuo.",
+      "weaponType": "PULSE_WRENCH_GUN",
+      "unlockCost": 0,
+      "unlockedByDefault": true,
+      "stats": {
+        "maxHp": 120,
+        "maxShield": 55,
+        "moveSpeed": 6.1,
+        "attackDamage": 18,
+        "attackCooldown": 0.48,
+        "attackRange": 13.0,
+        "critChance": 0.10,
+        "armor": 5
+      },
+      "activeSkillId": "skill_engineer_turret",
+      "passiveSkillId": "passive_engineer_drone",
+      "palette": {
+        "primary": "#232B38",
+        "secondary": "#FF8A00",
+        "visor": "#00F0FF",
+        "weapon": "#FFB800"
+      }
+    },
+    {
+      "id": "atirador",
+      "name": "ATIRADOR",
+      "role": "Rifle de Plasma & Crítico",
+      "description": "Combatente de precisão com rifle de plasma de longo alcance, disparos perfurantes e altíssima taxa crítica.",
+      "weaponType": "PLASMA_RIFLE",
+      "unlockCost": 0,
+      "unlockedByDefault": true,
+      "stats": {
+        "maxHp": 105,
+        "maxShield": 45,
+        "moveSpeed": 6.5,
+        "attackDamage": 26,
+        "attackCooldown": 0.42,
+        "attackRange": 18.0,
+        "critChance": 0.25,
+        "armor": 3
+      },
+      "activeSkillId": "skill_sniper_rail",
+      "passiveSkillId": "passive_sniper_pierce",
+      "palette": {
+        "primary": "#16202C",
+        "secondary": "#00F0FF",
+        "visor": "#00FFAA",
+        "weapon": "#00E5FF"
+      }
+    },
+    {
+      "id": "tecnomago",
+      "name": "TECNOMAGO",
+      "role": "Eletricidade, Plasma & Gravidade",
+      "description": "Manipulador de campos eletromagnéticos que conjura correntes elétricas em cadeia e singularidades gravitacionais.",
+      "weaponType": "ARC_STAFF",
+      "unlockCost": 250,
+      "unlockedByDefault": false,
+      "stats": {
+        "maxHp": 100,
+        "maxShield": 75,
+        "moveSpeed": 6.2,
+        "attackDamage": 22,
+        "attackCooldown": 0.50,
+        "attackRange": 14.5,
+        "critChance": 0.15,
+        "armor": 3
+      },
+      "activeSkillId": "skill_technomage_vortex",
+      "passiveSkillId": "passive_technomage_chain",
+      "palette": {
+        "primary": "#1C1635",
+        "secondary": "#9D4EDD",
+        "visor": "#E0AAFF",
+        "weapon": "#B565FF"
+      }
+    },
+    {
+      "id": "hacker",
+      "name": "HACKER",
+      "role": "Vírus Digital & Controle EMP",
+      "description": "Infiltrador cibernético que infecta máquinas com vírus corrosivos, dispara pulsos EMP e sobrecarrega circuitos.",
+      "weaponType": "CYBER_DECK",
+      "unlockCost": 300,
+      "unlockedByDefault": false,
+      "stats": {
+        "maxHp": 105,
+        "maxShield": 65,
+        "moveSpeed": 6.8,
+        "attackDamage": 20,
+        "attackCooldown": 0.44,
+        "attackRange": 13.5,
+        "critChance": 0.16,
+        "armor": 4
+      },
+      "activeSkillId": "skill_hacker_emp",
+      "passiveSkillId": "passive_hacker_virus",
+      "palette": {
+        "primary": "#121F24",
+        "secondary": "#39FF14",
+        "visor": "#00FF88",
+        "weapon": "#39FF14"
+      }
+    },
+    {
+      "id": "guardiao",
+      "name": "GUARDIÃO",
+      "role": "Tanque Pesado & Escudos",
+      "description": "Unidade blindada com exoesqueleto pesado, regeneração de escudo acelerada e onda de choque defensiva.",
+      "weaponType": "HEAVY_SHIELD_CANNON",
+      "unlockCost": 350,
+      "unlockedByDefault": false,
+      "stats": {
+        "maxHp": 195,
+        "maxShield": 95,
+        "moveSpeed": 5.6,
+        "attackDamage": 24,
+        "attackCooldown": 0.60,
+        "attackRange": 9.5,
+        "critChance": 0.10,
+        "armor": 12
+      },
+      "activeSkillId": "skill_guardian_aegis",
+      "passiveSkillId": "passive_guardian_fortress",
+      "palette": {
+        "primary": "#252B36",
+        "secondary": "#3B82F6",
+        "visor": "#60A5FA",
+        "weapon": "#38BDF8"
+      }
+    },
+    {
+      "id": "cacador",
+      "name": "CAÇADOR",
+      "role": "Pistolas Duplas & Mobilidade",
+      "description": "Combatente ágil com pistolas energéticas duplas, recarga de esquiva reduzida e rajadas de alta cadência.",
+      "weaponType": "DUAL_PISTOLS",
+      "unlockCost": 400,
+      "unlockedByDefault": false,
+      "stats": {
+        "maxHp": 110,
+        "maxShield": 50,
+        "moveSpeed": 7.3,
+        "attackDamage": 17,
+        "attackCooldown": 0.28,
+        "attackRange": 13.5,
+        "critChance": 0.20,
+        "armor": 4
+      },
+      "activeSkillId": "skill_hunter_volley",
+      "passiveSkillId": "passive_hunter_agility",
+      "palette": {
+        "primary": "#1D1B2A",
+        "secondary": "#FF2A85",
+        "visor": "#00F0FF",
+        "weapon": "#FF2A85"
+      }
+    }
+  ]
+}

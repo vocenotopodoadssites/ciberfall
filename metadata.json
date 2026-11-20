@@ -1,0 +1,6 @@
+{
+  "name": "Neonfall: Rise of Machines",
+  "description": "Roguelite de ação e sobrevivência 3D cyberpunk em terceira pessoa contra hordas de máquinas e chefes colossais.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

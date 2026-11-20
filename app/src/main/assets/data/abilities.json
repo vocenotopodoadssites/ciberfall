@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "abilities": [
+    { "id": "skill_berserker_nova", "name": "Salto Sísmico", "description": "Salta e golpeia o solo com lâminas térmicas, causando dano em área e atordoando máquinas.", "cooldown": 6.5, "damageMult": 2.6, "radius": 6.0 },
+    { "id": "passive_berserker_rage", "name": "Fúria Cibernética", "description": "Ganha até +35% de velocidade de ataque conforme a vida diminui.", "cooldown": 0.0, "damageMult": 1.0, "radius": 0.0 },
+    { "id": "skill_engineer_turret", "name": "Torre Sentinel-V", "description": "Implanta uma torre automática de plasma por 14s que rastreia alvos próximos.", "cooldown": 8.0, "damageMult": 1.1, "radius": 12.0 },
+    { "id": "passive_engineer_drone", "name": "Drone Companheiro", "description": "Inicia a partida com 1 drone orbital de ataque ativo.", "cooldown": 0.0, "damageMult": 1.0, "radius": 0.0 },
+    { "id": "skill_sniper_rail", "name": "Disparo Railgun", "description": "Dispara um feixe perfurante hipersônico com acerto crítico garantido.", "cooldown": 6.0, "damageMult": 3.4, "radius": 22.0 },
+    { "id": "passive_sniper_pierce", "name": "Munição Perfurante", "description": "Projéteis padrão atravessam +1 inimigo.", "cooldown": 0.0, "damageMult": 1.0, "radius": 0.0 },
+    { "id": "skill_technomage_vortex", "name": "Poço Gravitacional", "description": "Cria uma singularidade que puxa robôs próximos e causa dano elétrico contínuo.", "cooldown": 7.5, "damageMult": 2.2, "radius": 7.0 },
+    { "id": "passive_technomage_chain", "name": "Arco Voltaico", "description": "Ataques saltam para 1 alvo próximo causando choque.", "cooldown": 0.0, "damageMult": 1.0, "radius": 0.0 },
+    { "id": "skill_hacker_emp", "name": "Pulso EMP", "description": "Detona um pulso eletromagnético que paralisa máquinas e aplica vírus corrosivo.", "cooldown": 7.0, "damageMult": 2.0, "radius": 8.5 },
+    { "id": "passive_hacker_virus", "name": "Invasão Neural", "description": "Disparos infectam alvos com dano contínuo e lentidão.", "cooldown": 0.0, "damageMult": 1.0, "radius": 0.0 },
+    { "id": "skill_guardian_aegis", "name": "Égide Defensiva", "description": "Restaura 40% do escudo e repele todos os inimigos ao redor.", "cooldown": 8.0, "damageMult": 2.1, "radius": 6.5 },
+    { "id": "passive_guardian_fortress", "name": "Chassi Titânio", "description": "Reduz dano recebido e acelera recarga de escudo.", "cooldown": 0.0, "damageMult": 1.0, "radius": 0.0 },
+    { "id": "skill_hunter_volley", "name": "Tempestade de Chumbo", "description": "Dispara uma rajada circular de 12 projéteis de plasma ao redor.", "cooldown": 5.5, "damageMult": 1.6, "radius": 13.0 },
+    { "id": "passive_hunter_agility", "name": "Reflexo Cinético", "description": "Recarga da esquiva 30% mais rápida.", "cooldown": 0.0, "damageMult": 1.0, "radius": 0.0 }
+  ]
+}

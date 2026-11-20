@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "skins": [
+    { "id": "padrao", "name": "Padrão", "tier": "COMUM", "unlockType": "FREE", "cost": 0, "description": "Armadura tática de emissão padrão da resistência.", "primaryOverride": null, "secondaryOverride": null, "visorOverride": null, "weaponOverride": null },
+    { "id": "urbana", "name": "Urbana", "tier": "COMUM", "unlockType": "CREDITS", "cost": 120, "description": "Camuflagem cinza-asfalto com faixas de alerta urbano.", "primaryOverride": "#2C303A", "secondaryOverride": "#94A3B8", "visorOverride": "#38BDF8", "weaponOverride": "#00D4FF" },
+    { "id": "militar", "name": "Militar", "tier": "RARA", "unlockType": "CREDITS", "cost": 220, "description": "Revestimento balístico oliva-tático das forças de cerco.", "primaryOverride": "#243022", "secondaryOverride": "#65A30D", "visorOverride": "#FACC15", "weaponOverride": "#A3E635" },
+    { "id": "neon", "name": "Neon", "tier": "EPICA", "unlockType": "ACHIEVEMENT", "cost": 350, "description": "Chassi preto-obsidiana com circuitos hiper-luminescentes.", "primaryOverride": "#0D0F1A", "secondaryOverride": "#FF00E5", "visorOverride": "#00FFFF", "weaponOverride": "#FF2A85" },
+    { "id": "lendaria", "name": "Lendária", "tier": "LENDARIA", "unlockType": "BOSS_REWARD", "cost": 500, "description": "Liga dourada de reator OMEGA forjada dos restos dos chefes.", "primaryOverride": "#1C1610", "secondaryOverride": "#FFB800", "visorOverride": "#FFFFFF", "weaponOverride": "#FFE066" }
+  ]
+}

@@ -1,0 +1,41 @@
+[gd_scene load_steps=6 format=3]
+
+[sub_resource type="StandardMaterial3D" id="Mat_Asphalt"]
+albedo_color = Color(0.06, 0.07, 0.11, 1)
+metallic = 0.25
+roughness = 0.22
+
+[sub_resource type="PlaneMesh" id="Mesh_Floor"]
+material = SubResource("Mat_Asphalt")
+size = Vector2(72, 72)
+
+[sub_resource type="BoxShape3D" id="Shape_Floor"]
+size = Vector3(72, 0.2, 72)
+
+[sub_resource type="StandardMaterial3D" id="Mat_Container"]
+albedo_color = Color(0.18, 0.28, 0.34, 1)
+metallic = 0.7
+roughness = 0.45
+
+[sub_resource type="BoxMesh" id="Mesh_Container"]
+material = SubResource("Mat_Container")
+size = Vector3(4.6, 2.6, 2.2)
+
+[node name="CyberpunkSector" type="Node3D"]
+
+[node name="WetAsphaltGround" type="StaticBody3D" parent="."]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="WetAsphaltGround"]
+mesh = SubResource("Mesh_Floor")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="WetAsphaltGround"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
+shape = SubResource("Shape_Floor")
+
+[node name="Container_01" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.97, 0, 0.21, 0, 1, 0, -0.21, 0, 0.97, -10, 1.3, -7)
+mesh = SubResource("Mesh_Container")
+
+[node name="Container_02" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.95, 0, -0.31, 0, 1, 0, 0.31, 0, 0.95, 11, 1.3, -8)
+mesh = SubResource("Mesh_Container")

@@ -39,12 +39,16 @@ class NeonfallGLRenderer(
         .asFloatBuffer()
     private val rng = Random(42)
 
-    // Deep slate-blue atmospheric alley fog matching the reference image
-    private val fogColor = floatArrayOf(0.055f, 0.082f, 0.125f)
+    // Deep slate-blue atmospheric alley fog matching the reference image, shifting to ominous crimson-indigo during 1v1 boss duels
+    private val baseFogColor = floatArrayOf(0.055f, 0.082f, 0.125f)
+    private val bossFogColor = floatArrayOf(0.020f, 0.012f, 0.032f)
+    private val activeFogColor = floatArrayOf(0.055f, 0.082f, 0.125f)
     private val zeroEmit = floatArrayOf(0f, 0f, 0f)
+    private val worldPointScratch = FloatArray(4)
+    private val clipPointScratch = FloatArray(4)
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        GLES30.glClearColor(fogColor[0], fogColor[1], fogColor[2], 1f)
+        GLES30.glClearColor(baseFogColor[0], baseFogColor[1], baseFogColor[2], 1f)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
@@ -72,12 +76,13 @@ class NeonfallGLRenderer(
         lastFrameNs = now
 
         sim.step(dt)
-        hudPushAcc += dt
-        if (hudPushAcc >= 0.05f) {
-            hudPushAcc = 0f
-            onHudTick(sim.snapshotHud())
-        }
 
+        val mood = sim.bossMoodBlend.coerceIn(0f, 1f)
+        activeFogColor[0] = Math3D.lerp(baseFogColor[0], bossFogColor[0], mood)
+        activeFogColor[1] = Math3D.lerp(baseFogColor[1], bossFogColor[1], mood)
+        activeFogColor[2] = Math3D.lerp(baseFogColor[2], bossFogColor[2], mood)
+
+        GLES30.glClearColor(activeFogColor[0], activeFogColor[1], activeFogColor[2], 1f)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
 
         Matrix.setLookAtM(
@@ -88,18 +93,39 @@ class NeonfallGLRenderer(
         )
         Matrix.multiplyMM(vpMatrix, 0, projMatrix, 0, viewMatrix, 0)
 
+        hudPushAcc += dt
+        if (hudPushAcc >= 0.045f) {
+            hudPushAcc = 0f
+            onHudTick(sim.snapshotHud(projectDamageNumbers()))
+        }
+
         GLES30.glUseProgram(shader.programId)
         GLES30.glUniform3f(shader.uCameraPos, sim.cameraPos.x, sim.cameraPos.y, sim.cameraPos.z)
-        GLES30.glUniform3fv(shader.uFogColor, 1, fogColor, 0)
+        GLES30.glUniform3fv(shader.uFogColor, 1, activeFogColor, 0)
         GLES30.glUniform1f(shader.uFogDensity, sim.dynamicFogDensity)
 
-        // Alley lighting palette matching reference: cool slate-blue, magenta sign glow, warm amber garage lantern
+        // Alley lighting palette shifts dramatically toward dark crimson/violet spotlight during 1v1 boss duel
         GLES30.glUniform3f(shader.uLightPos1, sim.playerPos.x - 11f, 7.5f, sim.playerPos.z - 10f)
-        GLES30.glUniform3f(shader.uLightColor1, 0.25f, 0.65f, 0.92f)
+        GLES30.glUniform3f(
+            shader.uLightColor1,
+            Math3D.lerp(0.25f, 0.42f, mood),
+            Math3D.lerp(0.65f, 0.14f, mood),
+            Math3D.lerp(0.92f, 0.58f, mood)
+        )
         GLES30.glUniform3f(shader.uLightPos2, sim.playerPos.x + 12f, 6.5f, sim.playerPos.z + 9f)
-        GLES30.glUniform3f(shader.uLightColor2, 0.85f, 0.28f, 0.62f)
+        GLES30.glUniform3f(
+            shader.uLightColor2,
+            Math3D.lerp(0.85f, 1.05f, mood),
+            Math3D.lerp(0.28f, 0.08f, mood),
+            Math3D.lerp(0.62f, 0.24f, mood)
+        )
         GLES30.glUniform3f(shader.uLightPos3, sim.playerPos.x - 4f, 4.0f, sim.playerPos.z + 7f)
-        GLES30.glUniform3f(shader.uLightColor3, 0.92f, 0.56f, 0.22f)
+        GLES30.glUniform3f(
+            shader.uLightColor3,
+            Math3D.lerp(0.92f, 0.78f, mood),
+            Math3D.lerp(0.56f, 0.16f, mood),
+            Math3D.lerp(0.22f, 0.12f, mood)
+        )
 
         drawWetConcreteMossFloor()
         drawWorldObjects()
@@ -111,6 +137,44 @@ class NeonfallGLRenderer(
         if (sim.rainEnabled) {
             drawRain(dt)
         }
+    }
+
+    private fun projectDamageNumbers(): List<ProjectedDamageText> {
+        if (sim.damageNumbers.isEmpty()) return emptyList()
+        val out = ArrayList<ProjectedDamageText>(minOf(20, sim.damageNumbers.size))
+        for (dn in sim.damageNumbers) {
+            if (out.size >= 20) break
+            worldPointScratch[0] = dn.x
+            worldPointScratch[1] = dn.y
+            worldPointScratch[2] = dn.z
+            worldPointScratch[3] = 1f
+            Matrix.multiplyMV(clipPointScratch, 0, vpMatrix, 0, worldPointScratch, 0)
+            val w = clipPointScratch[3]
+            if (w <= 0.05f) continue
+            val ndcX = clipPointScratch[0] / w
+            val ndcY = clipPointScratch[1] / w
+            val normX = (ndcX + 1f) * 0.5f
+            val normY = (1f - ndcY) * 0.5f
+            if (normX in -0.08f..1.08f && normY in -0.08f..1.08f) {
+                val label = when {
+                    dn.isPlayerHit -> "-${dn.amount}"
+                    dn.isCrit -> "CRIT -${dn.amount}!"
+                    else -> "-${dn.amount}"
+                }
+                out.add(
+                    ProjectedDamageText(
+                        id = dn.uid,
+                        normX = normX,
+                        normY = normY,
+                        text = label,
+                        isCrit = dn.isCrit,
+                        isPlayerHit = dn.isPlayerHit,
+                        alpha = (dn.life / dn.maxLife).coerceIn(0f, 1f)
+                    )
+                )
+            }
+        }
+        return out
     }
 
     private fun drawMesh(
@@ -177,36 +241,26 @@ class NeonfallGLRenderer(
             when (obj.kind) {
                 WorldPropKind.SKYSCRAPER -> {
                     drawMesh(obj.x, obj.y, obj.z, 0f, obj.yawDeg, 0f, obj.sx, obj.sy, obj.sz, obj.baseColor, shininess = 18f, materialMode = 2)
-                    // Subtle vertical neon sign / window strip
                     drawMesh(obj.x, obj.y * 0.8f, obj.z, 0f, obj.yawDeg, 0f, obj.sx + 0.12f, 0.35f, obj.sz + 0.12f, obj.neonColor, obj.neonColor, 0.85f)
                 }
                 WorldPropKind.HOUSE_WORKSHOP -> {
-                    // Main concrete structure with moss & rain stains (mode 2)
                     drawMesh(obj.x, obj.y, obj.z, 0f, obj.yawDeg, 0f, obj.sx, obj.sy, obj.sz, obj.baseColor, shininess = 16f, materialMode = 2)
-                    // Upper corrugated metal overhang / loft
                     drawMesh(obj.x, obj.y + obj.sy * 0.22f, obj.z, 0f, obj.yawDeg, 0f, obj.sx + 0.25f, obj.sy * 0.36f, obj.sz + 0.25f, floatArrayOf(0.16f, 0.20f, 0.25f), shininess = 28f, materialMode = 3)
-                    // Rooftop concrete parapet & AC unit box
                     drawMesh(obj.x - obj.sx * 0.22f, obj.y + obj.sy * 0.56f, obj.z, 0f, obj.yawDeg, 0f, 1.3f, 0.85f, 1.1f, floatArrayOf(0.24f, 0.27f, 0.31f), materialMode = 3)
                     drawMesh(obj.x + obj.sx * 0.20f, obj.y + obj.sy * 0.55f, obj.z + 0.4f, 0f, 0f, 0f, 0.65f, 0.75f, 0.65f, floatArrayOf(0.20f, 0.23f, 0.28f), materialMode = 3, mesh = MeshPrimitives.cylinder)
-                    // Warm lit garage opening on ground floor
                     drawMesh(obj.x, 1.1f, obj.z, 0f, obj.yawDeg, 0f, obj.sx * 0.62f, 1.9f, obj.sz + 0.14f, floatArrayOf(0.85f, 0.52f, 0.20f), floatArrayOf(0.92f, 0.56f, 0.22f), 0.78f)
-                    // Exterior wall lantern
                     drawMesh(obj.x + obj.sx * 0.48f, obj.y + 0.5f, obj.z + obj.sz * 0.48f, 0f, 0f, 0f, 0.25f, 0.65f, 0.25f, obj.neonColor, obj.neonColor, 1.4f)
                 }
                 WorldPropKind.STAIR_PLATFORM -> {
-                    // Concrete base + steps + green metal center handrail (corrimão)
                     drawMesh(obj.x, obj.y, obj.z, 0f, obj.yawDeg, 0f, obj.sx, obj.sy, obj.sz, obj.baseColor, shininess = 18f, materialMode = 4)
-                    // Center handrail top bar & posts
                     drawMesh(obj.x, obj.y + 0.92f, obj.z, 0f, obj.yawDeg, 0f, 0.10f, 0.08f, obj.sz * 0.95f, obj.neonColor, shininess = 36f)
                     drawMesh(obj.x, obj.y + 0.52f, obj.z - obj.sz * 0.35f, 0f, 0f, 0f, 0.08f, 0.85f, 0.08f, obj.neonColor)
                     drawMesh(obj.x, obj.y + 0.52f, obj.z + obj.sz * 0.35f, 0f, 0f, 0f, 0.08f, 0.85f, 0.08f, obj.neonColor)
                 }
                 WorldPropKind.HANDRAIL_BARRIER -> {
-                    // Concrete curb base + green/steel tubular guardrail (corrimão)
                     drawMesh(obj.x, 0.14f, obj.z, 0f, obj.yawDeg, 0f, obj.sx, 0.28f, 0.32f, floatArrayOf(0.22f, 0.25f, 0.29f), materialMode = 2)
                     drawMesh(obj.x, 0.96f, obj.z, 0f, obj.yawDeg, 0f, obj.sx, 0.09f, 0.09f, obj.baseColor, shininess = 38f)
                     drawMesh(obj.x, 0.62f, obj.z, 0f, obj.yawDeg, 0f, obj.sx, 0.07f, 0.07f, obj.baseColor, shininess = 38f)
-                    // 3 vertical posts
                     for (px in listOf(-obj.sx * 0.42f, 0f, obj.sx * 0.42f)) {
                         val rad = Math3D.rad(obj.yawDeg)
                         val wx = obj.x + cos(rad) * px
@@ -253,8 +307,24 @@ class NeonfallGLRenderer(
             animTime = sim.playerAnimTime,
             hitFlash = sim.playerHitFlash,
             shieldActive = sim.shield > 0f,
-            skinStyle = sim.skinStyle
+            skinStyle = sim.skinStyle,
+            jumpProgress = sim.jumpAnimTimer,
+            jumpStyle = sim.jumpStyle
         )
+
+        sim.equippedPet?.let { pet ->
+            rigRenderer.drawPetRig(
+                vpMatrix = vpMatrix,
+                archetype = pet.archetype,
+                x = sim.petPos.x,
+                y = sim.petPos.y,
+                z = sim.petPos.z,
+                yawDeg = sim.petYawDeg,
+                primaryCol = sim.petPrimaryCol,
+                glowCol = sim.petGlowCol,
+                animTime = sim.elapsedSeconds
+            )
+        }
 
         for (i in 0 until sim.droneCount) {
             val ang = sim.elapsedSeconds * 2.2f + (i * 2f * Math.PI.toFloat() / sim.droneCount)
@@ -322,6 +392,12 @@ class NeonfallGLRenderer(
             val col = if (orb.isCredit) crColor else xpColor
             drawMesh(orb.pos.x, 0.45f + sin(sim.elapsedSeconds * 4f + orb.pos.x) * 0.1f, orb.pos.z, 0f, sim.elapsedSeconds * 130f, 0f, 0.34f, 0.34f, 0.34f, col, col, 1.5f, mesh = MeshPrimitives.octahedron)
         }
+        for (col in sim.arenaCollectibles) {
+            val bob = sin(sim.elapsedSeconds * 3.5f + col.pos.x) * 0.16f
+            drawMesh(col.pos.x, col.pos.y - 0.38f, col.pos.z, 0f, sim.elapsedSeconds * 65f, 0f, 0.95f, 1f, 0.95f, col.color, col.color, 1.2f, alpha = 0.75f, mesh = MeshPrimitives.ring)
+            drawMesh(col.pos.x, col.pos.y + 0.32f + bob, col.pos.z, 25f, sim.elapsedSeconds * 140f, 0f, 0.46f, 0.56f, 0.46f, col.color, col.color, 1.8f, mesh = MeshPrimitives.octahedron)
+            drawMesh(col.pos.x, col.pos.y + 0.32f + bob, col.pos.z, 65f, -sim.elapsedSeconds * 110f, 0f, 0.78f, 0.60f, 0.78f, col.color, col.color, 1.4f, alpha = 0.85f, mesh = MeshPrimitives.torus)
+        }
     }
 
     private fun drawShockwavesAndSparks() {
@@ -329,6 +405,21 @@ class NeonfallGLRenderer(
             val t = 1f - (s.life / s.maxLife).coerceIn(0f, 1f)
             val curRadius = Math3D.lerp(s.radius, s.maxRadius, t)
             drawMesh(s.x, s.y, s.z, 0f, 0f, 0f, curRadius, 1f, curRadius, s.color, s.color, 1.5f, alpha = (s.life / s.maxLife).coerceIn(0f, 1f), mesh = MeshPrimitives.ring)
+        }
+        for (sl in sim.slashArcs) {
+            val prog = 1f - (sl.life / sl.maxLife).coerceIn(0f, 1f)
+            val sweepYaw = sl.yawDeg + sl.swingDir * (-70f + prog * 145f)
+            val rad = Math3D.rad(sweepYaw)
+            val bx = sl.x + sin(rad) * sl.radius * 0.58f
+            val bz = sl.z + cos(rad) * sl.radius * 0.58f
+            val alpha = (sl.life / sl.maxLife).coerceIn(0f, 1f) * 0.92f
+            drawMesh(bx, sl.y, bz, 0f, sweepYaw, sl.swingDir * 14f, 0.24f, 0.10f, sl.radius * 1.15f, sl.color, sl.color, 2.0f, alpha = alpha, mesh = MeshPrimitives.blade)
+            drawMesh(sl.x, sl.y - 0.1f, sl.z, 0f, sweepYaw, 0f, sl.radius * 0.88f, 1f, sl.radius * 0.88f, sl.color, sl.color, 1.6f, alpha = alpha * 0.65f, mesh = MeshPrimitives.ring)
+        }
+        for (mf in sim.muzzleFlashes) {
+            val alpha = (mf.life / mf.maxLife).coerceIn(0f, 1f)
+            drawMesh(mf.x, mf.y, mf.z, 0f, mf.yawDeg + 45f, 0f, mf.size, mf.size * 0.72f, mf.size * 1.35f, mf.color, mf.color, 2.1f, alpha = alpha, mesh = MeshPrimitives.octahedron)
+            drawMesh(mf.x, mf.y, mf.z, 90f, mf.yawDeg, 0f, mf.size * 0.85f, mf.size * 0.85f, mf.size * 0.85f, mf.color, mf.color, 1.7f, alpha = alpha * 0.75f, mesh = MeshPrimitives.torus)
         }
         for (sp in sim.sparks) {
             drawMesh(sp.x, sp.y, sp.z, 0f, 0f, 0f, 0.14f, 0.14f, 0.14f, sp.color, sp.color, 1.6f)

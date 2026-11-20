@@ -1,5 +1,6 @@
 package com.example.engine3d
 
+import com.example.audio.SoundEffect
 import com.example.data.AbilityDef
 import com.example.data.CharacterClassDef
 import com.example.data.CharacterPalette
@@ -7,6 +8,7 @@ import com.example.data.EnemyDef
 import com.example.data.EvolutionCardDef
 import com.example.data.GameCatalog
 import com.example.data.GraphicsQuality
+import com.example.data.PetDef
 import com.example.data.PlayerSaveData
 import com.example.data.WeaponType
 import com.example.data.parseHexColor
@@ -50,7 +52,12 @@ data class ActiveEnemy(
     var corrosiveTimer: Float = 0f,
     var cryoTimer: Float = 0f,
     var stunTimer: Float = 0f,
-    var phase2: Boolean = false
+    var phase2: Boolean = false,
+    var bossAttackCycle: Int = 0,
+    var bossDashTimer: Float = 0f,
+    var bossDashDirX: Float = 0f,
+    var bossDashDirZ: Float = 0f,
+    var bossSpiralOffset: Float = 0f
 )
 
 data class Projectile(
@@ -112,6 +119,61 @@ data class ParticleSpark(
     val color: FloatArray
 )
 
+data class SlashArcVfx(
+    val x: Float,
+    val y: Float,
+    val z: Float,
+    val yawDeg: Float,
+    val radius: Float,
+    val swingDir: Float,
+    var life: Float,
+    val maxLife: Float,
+    val color: FloatArray
+)
+
+data class MuzzleFlashVfx(
+    val x: Float,
+    val y: Float,
+    val z: Float,
+    val yawDeg: Float,
+    val size: Float,
+    var life: Float,
+    val maxLife: Float,
+    val color: FloatArray
+)
+
+data class DamageNumber(
+    val uid: Int,
+    var x: Float,
+    var y: Float,
+    var z: Float,
+    val amount: Int,
+    val isCrit: Boolean,
+    val isPlayerHit: Boolean,
+    var life: Float,
+    val maxLife: Float
+)
+
+data class ProjectedDamageText(
+    val id: Int,
+    val normX: Float,
+    val normY: Float,
+    val text: String,
+    val isCrit: Boolean,
+    val isPlayerHit: Boolean,
+    val alpha: Float
+)
+
+data class ArenaCollectible(
+    val uid: Int,
+    val pos: Vec3,
+    val isPetCapsule: Boolean,
+    val targetId: String,
+    val label: String,
+    val color: FloatArray,
+    var life: Float = 55f
+)
+
 data class HudSnapshot(
     val status: RunStatus = RunStatus.PLAYING,
     val hp: Float = 100f,
@@ -140,7 +202,14 @@ data class HudSnapshot(
     val levelUpChoices: List<EvolutionCardDef> = emptyList(),
     val acquiredCards: Map<String, Int> = emptyMap(),
     val bossesDefeatedInRun: Int = 0,
-    val statusBannerText: String? = null
+    val statusBannerText: String? = null,
+    val bossDuelActive: Boolean = false,
+    val bossMoodBlend: Float = 0f,
+    val difficultyTier: Int = 1,
+    val playerDamageFlash: Float = 0f,
+    val activePetName: String? = null,
+    val collectiblesFoundInRun: Int = 0,
+    val damagePopups: List<ProjectedDamageText> = emptyList()
 )
 
 class GameSimulation(
@@ -149,7 +218,9 @@ class GameSimulation(
     val classDef: CharacterClassDef,
     val palette: CharacterPalette,
     private val onHapticEvent: () -> Unit = {},
-    val skinStyle: String? = null
+    val skinStyle: String? = null,
+    private val onCollectibleFound: (isPet: Boolean, targetId: String) -> Unit = { _, _ -> },
+    private val onSoundEvent: (SoundEffect) -> Unit = {}
 ) {
     val world = CyberpunkWorldSector()
     private val rng = Random(System.currentTimeMillis())
@@ -161,6 +232,7 @@ class GameSimulation(
     var rainEnabled: Boolean = save.rainEnabled
     var autoAttackEnabled: Boolean = save.autoAttackEnabled
     var hapticsEnabled: Boolean = save.hapticsEnabled
+    var soundEnabled: Boolean = save.soundEnabled
 
     // Dynamic Weather (Cycles between Rain & Dense Fog)
     var currentWeather: WeatherPhase = WeatherPhase.CHUVA
@@ -178,16 +250,20 @@ class GameSimulation(
     var playerAnimTime = 0f
     var playerHitFlash = 0f
 
-    // Fluid Parkour / Auto-Climb & Auto-Jump State
+    // Fluid Parkour / Auto-Climb & Acrobatic Jump State
     var playerVelY: Float = 0f
     var isGrounded: Boolean = true
     var isClimbing: Boolean = false
+    var jumpAnimTimer: Float = 0f
+    var jumpStyle: Int = 0
+    private var slashToggle: Float = 1f
     private var climbingBox: AABB? = null
     private var climbNormalX: Float = 0f
     private var climbNormalZ: Float = 0f
     private var wallPushTimer: Float = 0f
     private var climbHoldTimer: Float = 0f
     private var currentSupportY: Float = 0f
+    private var footstepTimer: Float = 0f
     private val hitNormalScratch = FloatArray(2)
 
     // Player Inputs
@@ -276,24 +352,42 @@ class GameSimulation(
     private var mineSpawnTimer = 3.0f
     private var gravityFieldTimer = 3.5f
 
-    // Spawner
+    // Spawner, Boss Duel Mode & Progressive Difficulty
     private var nextUid = 1
     private var spawnTimer = 0.8f
-    private var omegaSpawned = false
-    private var seraphSpawned = false
-    private var titanSpawned = false
+    private var nextBossElapsedTarget = 52f
+    private var nextBossKillsTarget = 22
     private var bossBannerTimer = 0f
     private var statusBannerText: String? = null
     private var statusBannerTimer = 0f
+    var bossDuelActive: Boolean = false
+    var bossMoodBlend: Float = 0f
+    var difficultyTier: Int = 1
+
+    // Equipped Cyber-Pet Companion & Arena Collectibles
+    val equippedPet: PetDef? = save.equippedPetId?.let { id -> catalog.pets.firstOrNull { it.id == id } }
+    val petPrimaryCol: FloatArray = equippedPet?.let { parseHexColor(it.primaryHex) } ?: floatArrayOf(0.2f, 0.25f, 0.35f)
+    val petGlowCol: FloatArray = equippedPet?.let { parseHexColor(it.glowHex) } ?: floatArrayOf(0.22f, 0.75f, 0.97f)
+    val petPos = Vec3(playerPos.x - 1.5f, 0f, playerPos.z - 1.2f)
+    var petYawDeg: Float = 180f
+    private var petActionTimer = 2.2f
+    private var collectibleSpawnTimer = 24f
+    var collectiblesFoundInRun: Int = 0
+    private val unlockedPetCache = save.unlockedPetIds.toMutableSet()
+    private val discoveredRelicCache = save.discoveredRelicIds.toMutableSet()
 
     // Entities
     val enemies = mutableListOf<ActiveEnemy>()
     val projectiles = mutableListOf<Projectile>()
     val pickups = mutableListOf<PickupOrb>()
+    val arenaCollectibles = mutableListOf<ArenaCollectible>()
     val turrets = mutableListOf<AlliedTurret>()
     val mines = mutableListOf<TechMine>()
     val shockwaves = mutableListOf<ShockwaveVfx>()
     val sparks = mutableListOf<ParticleSpark>()
+    val slashArcs = mutableListOf<SlashArcVfx>()
+    val muzzleFlashes = mutableListOf<MuzzleFlashVfx>()
+    val damageNumbers = mutableListOf<DamageNumber>()
     val cardStacks = mutableMapOf<String, Int>()
     var pendingChoices: List<EvolutionCardDef> = emptyList()
 
@@ -323,6 +417,24 @@ class GameSimulation(
         armor = classDef.stats.armor
         xpBonusMult = 1f + upgXp * 0.10f
         magnetRadius = 4.6f * (1f + upgMag * 0.20f)
+
+        // Apply permanent Relic Codex mastery bonus (+2.5% damage & +3% credits per discovered relic)
+        val relicBonus = save.discoveredRelicIds.size
+        if (relicBonus > 0) {
+            attackDamage *= (1f + relicBonus * 0.025f)
+            creditBonusMult += relicBonus * 0.03f
+        }
+
+        // Apply Equipped Cyber-Pet passive bonuses
+        equippedPet?.let { pet ->
+            when (pet.bonusType) {
+                "MAGNET_STRIKE" -> magnetRadius *= (1f + pet.bonusValue)
+                "RAPID_SHOT" -> attackCooldown *= (1f - pet.bonusValue)
+                "SHIELD_PULSE" -> moveSpeed *= 1.10f
+                "CRIT_IGNITE" -> critChance = (critChance + pet.bonusValue).coerceAtMost(0.92f)
+                "ARC_HEAL" -> hpRegen += pet.bonusValue
+            }
+        }
 
         updateCameraTransform(1.0f)
         spawnInitialSquad()
@@ -355,6 +467,7 @@ class GameSimulation(
         dodgeTimer = 0.24f
         dodgeCooldown = dodgeMaxCooldown * cooldownMult
         playerAnimState = RigAnimState.DODGE
+        emitSound(SoundEffect.DEFENSE_SHIELD)
         shockwaves.add(ShockwaveVfx(playerPos.x, 0.2f, playerPos.z, 0.4f, 2.4f, 0.25f, 0.25f, secondaryCol))
         if (shockwaveOnDodgeLevel > 0) {
             val r = 4.8f
@@ -380,14 +493,19 @@ class GameSimulation(
 
         when (classDef.id) {
             "berserker" -> {
+                emitSound(SoundEffect.POWER_SKILL)
+                emitSound(SoundEffect.STRIKE_SLASH)
                 shockwaves.add(ShockwaveVfx(playerPos.x, 0.25f, playerPos.z, 0.8f, r, 0.42f, 0.42f, weaponCol))
                 damageEnemiesInRadius(playerPos.x, playerPos.z, r, dmg, stunSec = 1.6f)
             }
             "engenheiro" -> {
+                emitSound(SoundEffect.POWER_SKILL)
                 turrets.add(AlliedTurret(Vec3(playerPos.x, 0f, playerPos.z), life = 14f + turretBonusLife, fireTimer = 0.1f, yawDeg = playerYawDeg))
                 shockwaves.add(ShockwaveVfx(playerPos.x, 0.2f, playerPos.z, 0.5f, 2.8f, 0.35f, 0.35f, visorCol))
             }
             "atirador" -> {
+                emitSound(SoundEffect.POWER_SKILL)
+                emitSound(SoundEffect.SHOT_PLASMA)
                 val target = findNearestEnemy(r + 6f)
                 val dirX: Float
                 val dirZ: Float
@@ -417,6 +535,7 @@ class GameSimulation(
                 )
             }
             "tecnomago" -> {
+                emitSound(SoundEffect.POWER_SKILL)
                 shockwaves.add(ShockwaveVfx(playerPos.x, 0.35f, playerPos.z, r, 0.6f, 0.65f, 0.65f, weaponCol))
                 enemies.forEach { e ->
                     val dx = playerPos.x - e.pos.x
@@ -431,6 +550,7 @@ class GameSimulation(
                 }
             }
             "hacker" -> {
+                emitSound(SoundEffect.POWER_SKILL)
                 shockwaves.add(ShockwaveVfx(playerPos.x, 0.25f, playerPos.z, 0.8f, r, 0.5f, 0.5f, weaponCol))
                 enemies.forEach { e ->
                     if (e.pos.distTo(playerPos.x, playerPos.z) <= r) {
@@ -441,6 +561,8 @@ class GameSimulation(
                 }
             }
             "guardiao" -> {
+                emitSound(SoundEffect.DEFENSE_SHIELD)
+                emitSound(SoundEffect.POWER_SKILL)
                 shield = min(maxShield, shield + maxShield * 0.45f)
                 shockwaves.add(ShockwaveVfx(playerPos.x, 0.3f, playerPos.z, 0.6f, r, 0.45f, 0.45f, visorCol))
                 enemies.forEach { e ->
@@ -455,6 +577,8 @@ class GameSimulation(
                 }
             }
             "cacador" -> {
+                emitSound(SoundEffect.POWER_SKILL)
+                emitSound(SoundEffect.SHOT_PLASMA)
                 val count = 12
                 for (i in 0 until count) {
                     val ang = (2.0 * Math.PI * i / count).toFloat()
@@ -564,6 +688,7 @@ class GameSimulation(
         }
 
         updateWeatherCycle(dt)
+        bossMoodBlend = Math3D.lerp(bossMoodBlend, if (bossDuelActive) 1f else 0f, (dt * 1.45f).coerceIn(0f, 1f))
 
         if (dodgeCooldown > 0f) dodgeCooldown = max(0f, dodgeCooldown - dt)
         if (activeSkillCooldown > 0f) activeSkillCooldown = max(0f, activeSkillCooldown - dt)
@@ -579,9 +704,11 @@ class GameSimulation(
         updatePlayerMovement(dt)
         updateCombat(dt)
         updateAlliedSystems(dt)
+        updatePetCompanion(dt)
         updateEnemies(dt)
         updateProjectiles(dt)
         updatePickups(dt)
+        updateArenaCollectibles(dt)
         updateVfx(dt)
         updateWaveDirector(dt)
         updateCameraTransform(dt)
@@ -590,8 +717,8 @@ class GameSimulation(
     private fun updateWeatherCycle(dt: Float) {
         val cycleIdx = ((elapsedSeconds / 28f).toInt()) % WeatherPhase.entries.size
         currentWeather = WeatherPhase.entries[cycleIdx]
-        val targetFog = graphicsQuality.fogDensity * currentWeather.fogMultiplier
-        val targetRain = currentWeather.rainMultiplier
+        val targetFog = graphicsQuality.fogDensity * currentWeather.fogMultiplier * (1f + bossMoodBlend * 0.45f)
+        val targetRain = currentWeather.rainMultiplier * (1f + bossMoodBlend * 0.40f)
         dynamicFogDensity = Math3D.lerp(dynamicFogDensity, targetFog, dt * 0.8f)
         dynamicRainScale = Math3D.lerp(dynamicRainScale, targetRain, dt * 0.8f)
     }
@@ -659,28 +786,41 @@ class GameSimulation(
                 playerPos.z += tz * tangentDot * (moveSpeed * 0.45f) * dt
                 box.resolveCircleXZ(playerPos, 0.65f)
                 playerAnimState = RigAnimState.CLIMB
+                footstepTimer -= dt
+                if (footstepTimer <= 0f) {
+                    footstepTimer = 0.27f
+                    emitSound(SoundEffect.FOOTSTEP)
+                }
 
-                // Reached roof/top ledge -> fluid automatic mantle hop onto top!
+                // Reached roof/top ledge -> fluid automatic parkour mantle flip onto top!
                 if (playerPos.y >= box.maxY - 0.18f) {
                     playerPos.y = box.maxY + 0.08f
-                    playerVelY = 5.4f
+                    playerVelY = 5.8f
                     playerPos.x += -climbNormalX * 0.58f
                     playerPos.z += -climbNormalZ * 0.58f
                     isClimbing = false
                     climbingBox = null
                     wallPushTimer = 0f
                     isGrounded = false
+                    jumpAnimTimer = 0f
+                    jumpStyle = (jumpStyle + 1) % 3
+                    spawnSparks(playerPos.x, playerPos.y + 0.1f, playerPos.z, visorCol, 6)
+                    emitSound(SoundEffect.JUMP_PARKOUR)
                     playerAnimState = RigAnimState.JUMP
                 }
             } else if (inputMag > 0.25f && pushInto < -0.22f) {
-                // Pulling away from the wall -> fluid wall-jump off!
-                playerVelY = 8.4f
+                // Pulling away from the wall -> acrobatic wall-kick backflip off!
+                playerVelY = 8.6f
                 playerPos.x += climbNormalX * 0.48f
                 playerPos.z += climbNormalZ * 0.48f
                 isClimbing = false
                 climbingBox = null
                 wallPushTimer = 0f
                 isGrounded = false
+                jumpAnimTimer = 0f
+                jumpStyle = 2
+                shockwaves.add(ShockwaveVfx(playerPos.x, playerPos.y + 0.3f, playerPos.z, 0.2f, 1.5f, 0.22f, 0.22f, visorCol))
+                emitSound(SoundEffect.JUMP_PARKOUR)
                 playerAnimState = RigAnimState.JUMP
             } else {
                 // Idle hold briefly, then gentle slide down
@@ -721,14 +861,17 @@ class GameSimulation(
                         pushedClimbableWall = true
                         wallPushTimer += dt
                         if (heightGap <= 1.38f) {
-                            // Low/medium obstacle (stairs, cars, handrails, crates): instant fluid vault/jump onto top!
+                            // Low/medium obstacle: instant acrobatic parkour vault/flip onto top!
                             if (wallPushTimer >= 0.035f && (isGrounded || playerVelY <= 1.5f)) {
-                                playerVelY = if (heightGap <= 0.95f) 8.4f else 10.6f
+                                playerVelY = if (heightGap <= 0.95f) 8.6f else 10.8f
                                 playerPos.x += -nx * 0.26f
                                 playerPos.z += -nz * 0.26f
                                 isGrounded = false
                                 wallPushTimer = 0f
-                                spawnSparks(playerPos.x, playerPos.y + 0.15f, playerPos.z, secondaryCol, 4)
+                                jumpAnimTimer = 0f
+                                jumpStyle = (jumpStyle + 1) % 2
+                                spawnSparks(playerPos.x, playerPos.y + 0.15f, playerPos.z, secondaryCol, 7)
+                                emitSound(SoundEffect.JUMP_PARKOUR)
                             }
                         } else if (wallPushTimer >= 0.085f) {
                             // Taller wall (containers, houses): latch and start fluid climbing!
@@ -749,11 +892,15 @@ class GameSimulation(
             }
 
             if (!isClimbing) {
-                // Check if player just ran off an elevated surface -> fluid parkour jump arc off the ledge!
+                // Check if player just ran off an elevated surface -> acrobatic parkour leap off ledge!
                 val edgeSupport = computeSupportY(playerPos.x, playerPos.z, playerPos.y)
                 if (wasGrounded && prevSupportY > 0.4f && edgeSupport < prevSupportY - 0.35f && inputMag > 0.32f && playerVelY <= 0.5f) {
-                    playerVelY = 7.2f
+                    playerVelY = 7.6f
                     isGrounded = false
+                    jumpAnimTimer = 0f
+                    jumpStyle = 0
+                    spawnSparks(playerPos.x, playerPos.y + 0.15f, playerPos.z, visorCol, 5)
+                    emitSound(SoundEffect.JUMP_PARKOUR)
                 }
 
                 // Vertical gravity & ground landing
@@ -762,16 +909,34 @@ class GameSimulation(
 
                 val groundY = computeSupportY(playerPos.x, playerPos.z, playerPos.y + 0.25f)
                 if (playerPos.y <= groundY) {
+                    if (!wasGrounded && playerVelY < -5.2f) {
+                        emitSound(SoundEffect.LAND_IMPACT)
+                    }
                     if (!wasGrounded && playerVelY < -7.5f) {
-                        spawnSparks(playerPos.x, groundY + 0.1f, playerPos.z, secondaryCol, 5)
+                        spawnSparks(playerPos.x, groundY + 0.1f, playerPos.z, secondaryCol, 7)
+                        if (playerVelY < -11.5f) {
+                            shockwaves.add(ShockwaveVfx(playerPos.x, groundY + 0.08f, playerPos.z, 0.2f, 1.8f, 0.22f, 0.22f, secondaryCol))
+                        }
                     }
                     playerPos.y = groundY
                     playerVelY = 0f
                     isGrounded = true
+                    jumpAnimTimer = 0f
                 } else {
                     isGrounded = false
+                    jumpAnimTimer += dt
                 }
                 currentSupportY = groundY
+            }
+
+            if (isGrounded && !isClimbing && inputMag > 0.10f) {
+                footstepTimer -= dt
+                if (footstepTimer <= 0f) {
+                    footstepTimer = if (inputMag > 0.72f || sprinting) 0.26f else 0.36f
+                    emitSound(SoundEffect.FOOTSTEP)
+                }
+            } else if (!isClimbing) {
+                footstepTimer = 0.04f
             }
 
             playerAnimState = when {
@@ -870,7 +1035,22 @@ class GameSimulation(
         val dmg = attackDamage * lowHpMult * (if (isCrit) critMultiplier else 1f)
 
         if (classDef.weaponType == WeaponType.ENERGY_BLADES) {
-            shockwaves.add(ShockwaveVfx(playerPos.x + dirX * 1.4f, 0.9f, playerPos.z + dirZ * 1.4f, 0.6f, attackRange * 0.72f, 0.22f, 0.22f, weaponCol))
+            slashToggle = -slashToggle
+            emitSound(SoundEffect.STRIKE_SLASH)
+            slashArcs.add(
+                SlashArcVfx(
+                    x = playerPos.x + dirX * 1.1f,
+                    y = playerPos.y + 1.08f,
+                    z = playerPos.z + dirZ * 1.1f,
+                    yawDeg = playerYawDeg,
+                    radius = (attackRange * 0.58f).coerceIn(1.5f, 3.2f),
+                    swingDir = slashToggle,
+                    life = 0.22f,
+                    maxLife = 0.22f,
+                    color = weaponCol
+                )
+            )
+            shockwaves.add(ShockwaveVfx(playerPos.x + dirX * 1.4f, playerPos.y + 0.9f, playerPos.z + dirZ * 1.4f, 0.5f, attackRange * 0.72f, 0.22f, 0.22f, weaponCol))
             damageEnemiesInRadius(playerPos.x + dirX * 1.3f, playerPos.z + dirZ * 1.3f, attackRange * 0.78f, dmg, isCrit = isCrit)
             if (extraProjectiles > 0) {
                 spawnPlayerVolley(dirX, dirZ, dmg * 0.65f, isCrit, extraProjectiles)
@@ -881,10 +1061,24 @@ class GameSimulation(
     }
 
     private fun spawnPlayerVolley(dirX: Float, dirZ: Float, dmg: Float, isCrit: Boolean, count: Int) {
+        emitSound(SoundEffect.SHOT_PLASMA)
         val baseAngle = atan2(dirX, dirZ)
         val spreadStep = 0.14f
         val startOffset = -((count - 1) * spreadStep) * 0.5f
         val speed = if (classDef.weaponType == WeaponType.PLASMA_RIFLE) 26f else 20f
+        muzzleFlashes.add(
+            MuzzleFlashVfx(
+                x = playerPos.x + dirX * 0.85f,
+                y = playerPos.y + 1.16f,
+                z = playerPos.z + dirZ * 0.85f,
+                yawDeg = Math3D.deg(baseAngle),
+                size = if (isCrit) 0.52f else 0.36f,
+                life = 0.11f,
+                maxLife = 0.11f,
+                color = weaponCol
+            )
+        )
+        spawnSparks(playerPos.x + dirX * 0.8f, playerPos.y + 1.16f, playerPos.z + dirZ * 0.8f, weaponCol, 4)
         for (i in 0 until count) {
             val ang = baseAngle + startOffset + i * spreadStep
             projectiles.add(
@@ -1083,6 +1277,89 @@ class GameSimulation(
         }
     }
 
+    private fun updatePetCompanion(dt: Float) {
+        val pet = equippedPet ?: return
+        val rad = Math3D.rad(playerYawDeg + 135f)
+        val goalX = playerPos.x + sin(rad) * 1.45f
+        val goalZ = playerPos.z + cos(rad) * 1.45f
+        val dx = goalX - petPos.x
+        val dz = goalZ - petPos.z
+        val dist = sqrt(dx * dx + dz * dz)
+        if (dist > 0.12f) {
+            val followSpd = (moveSpeed * 1.25f).coerceAtLeast(8f)
+            val step = min(dist, followSpd * dt)
+            petPos.x += (dx / dist) * step
+            petPos.z += (dz / dist) * step
+            petYawDeg = Math3D.lerpAngleDeg(petYawDeg, Math3D.deg(atan2(dx, dz)), dt * 10f)
+        } else {
+            petYawDeg = Math3D.lerpAngleDeg(petYawDeg, playerYawDeg, dt * 6f)
+        }
+        petPos.y = Math3D.lerp(petPos.y, playerPos.y, (dt * 8f).coerceIn(0f, 1f))
+
+        petActionTimer -= dt
+        if (petActionTimer <= 0f) {
+            when (pet.bonusType) {
+                "MAGNET_STRIKE" -> {
+                    petActionTimer = 2.5f
+                    val target = findNearestEnemy(7.5f)
+                    if (target != null) {
+                        applyDamageToEnemy(target, attackDamage * 0.85f, isCrit = false)
+                        shockwaves.add(ShockwaveVfx(target.pos.x, 0.4f, target.pos.z, 0.2f, 2.0f, 0.25f, 0.25f, petGlowCol))
+                    }
+                }
+                "RAPID_SHOT" -> {
+                    petActionTimer = 1.15f
+                    val target = findNearestEnemy(15f)
+                    if (target != null) {
+                        val tx = target.pos.x - petPos.x
+                        val tz = target.pos.z - petPos.z
+                        val l = sqrt(tx * tx + tz * tz).coerceAtLeast(0.01f)
+                        emitSound(SoundEffect.SHOT_PLASMA)
+                        muzzleFlashes.add(MuzzleFlashVfx(petPos.x, petPos.y + 1.1f, petPos.z, Math3D.deg(atan2(tx, tz)), 0.28f, 0.1f, 0.1f, petGlowCol))
+                        projectiles.add(
+                            Projectile(
+                                pos = Vec3(petPos.x, petPos.y + 1.1f, petPos.z),
+                                vx = (tx / l) * 23f,
+                                vz = (tz / l) * 23f,
+                                fromPlayer = true,
+                                damage = attackDamage * 0.55f,
+                                isCrit = false,
+                                pierceLeft = 0,
+                                life = 0.85f,
+                                color = petGlowCol,
+                                scale = 0.16f
+                            )
+                        )
+                    }
+                }
+                "SHIELD_PULSE" -> {
+                    petActionTimer = 5.5f
+                    shield = min(maxShield, shield + pet.bonusValue)
+                    emitSound(SoundEffect.DEFENSE_SHIELD)
+                    shockwaves.add(ShockwaveVfx(petPos.x, petPos.y + 0.5f, petPos.z, 0.3f, 2.8f, 0.35f, 0.35f, petGlowCol))
+                }
+                "CRIT_IGNITE" -> {
+                    petActionTimer = 2.2f
+                    val target = findNearestEnemy(6.5f)
+                    if (target != null) {
+                        target.burnTimer = 3.5f
+                        target.burnDps = max(target.burnDps, attackDamage * 0.45f)
+                        applyDamageToEnemy(target, attackDamage * 0.9f, isCrit = true)
+                    }
+                }
+                "ARC_HEAL" -> {
+                    petActionTimer = 1.9f
+                    val target = findNearestEnemy(12f)
+                    if (target != null) {
+                        applyDamageToEnemy(target, attackDamage * 0.7f, isCrit = false)
+                        chainStrike(target, attackDamage * 0.55f, 2)
+                    }
+                }
+                else -> petActionTimer = 3.0f
+            }
+        }
+    }
+
     private fun updateEnemies(dt: Float) {
         val iter = enemies.iterator()
         while (iter.hasNext()) {
@@ -1113,11 +1390,30 @@ class GameSimulation(
             val dist = sqrt(dx * dx + dz * dz).coerceAtLeast(0.001f)
             e.yawDeg = Math3D.deg(atan2(dx, dz))
 
+            val tierSpeedMult = 1f + (difficultyTier - 1) * 0.08f
             val slowFactor = if (e.cryoTimer > 0f) (1f - max(0.25f, cryoSlow)).coerceAtLeast(0.35f) else 1f
-            val speed = e.def.speed * slowFactor * (if (e.isBoss && e.phase2) 1.25f else 1f)
+            val speed = e.def.speed * tierSpeedMult * slowFactor * (if (e.isBoss && e.phase2) 1.25f else 1f)
+
+            if (e.isBoss && e.bossDashTimer > 0f) {
+                e.bossDashTimer -= dt
+                val dashSpd = speed * 3.4f
+                e.pos.x += e.bossDashDirX * dashSpd * dt
+                e.pos.z += e.bossDashDirZ * dashSpd * dt
+                for (box in world.colliders) {
+                    box.resolveCircleXZ(e.pos, 0.55f * e.def.scale)
+                }
+                if (rng.nextFloat() < 0.45f) {
+                    spawnSparks(e.pos.x, 0.5f, e.pos.z, parseHexColor(e.def.glowHex), 2)
+                }
+                if (dist < 2.2f) {
+                    damagePlayer(e.def.damage * (1f + (difficultyTier - 1) * 0.16f) * 1.15f, e)
+                    e.bossDashTimer = 0f
+                }
+                continue
+            }
 
             val desiredStopDist = when {
-                e.isBoss -> 6.5f
+                e.isBoss -> if (e.def.id == "seraph_x") 8.2f else 5.8f
                 e.def.aiState == "SENTRY_TURRET" -> 999f
                 e.def.aiState == "RANGED_HOVER" || e.def.aiState == "RANGED_ADVANCE" -> e.def.attackRange * 0.72f
                 else -> 1.15f
@@ -1133,65 +1429,158 @@ class GameSimulation(
 
             if (e.isBoss && !e.phase2 && e.hp <= e.maxHp * 0.5f) {
                 e.phase2 = true
-                statusBannerText = "${e.def.name}: SOBRECARGA DE REATOR!"
+                statusBannerText = "${e.def.name}: FASE 2 — SOBRECARGA MÁXIMA!"
                 statusBannerTimer = 2.8f
                 shockwaves.add(ShockwaveVfx(e.pos.x, 0.4f, e.pos.z, 1.0f, 11.0f, 0.55f, 0.55f, floatArrayOf(0.95f, 0.25f, 0.25f)))
             }
 
+            val tierDmgMult = 1f + (difficultyTier - 1) * 0.16f
             e.attackTimer -= dt
             if (e.attackTimer <= 0f) {
                 if (e.isBoss) {
-                    e.attackTimer = if (e.phase2) 1.55f else 2.2f
-                    val spreadCount = if (e.phase2) 8 else 5
-                    val baseAng = atan2(dx, dz)
-                    for (i in 0 until spreadCount) {
-                        val ang = baseAng + (i - spreadCount / 2f) * 0.22f
-                        projectiles.add(
-                            Projectile(
-                                pos = Vec3(e.pos.x, 1.6f, e.pos.z),
-                                vx = sin(ang) * 12f,
-                                vz = cos(ang) * 12f,
-                                fromPlayer = false,
-                                damage = e.def.damage,
-                                isCrit = false,
-                                pierceLeft = 0,
-                                life = 2.4f,
-                                color = parseHexColor(e.def.glowHex),
-                                scale = 0.34f
-                            )
-                        )
-                    }
-                    e.specialTimer -= 2f
-                    if (e.specialTimer <= 0f) {
-                        e.specialTimer = 6.0f
-                        shockwaves.add(ShockwaveVfx(e.pos.x, 0.35f, e.pos.z, 1f, 8.5f, 0.5f, 0.5f, parseHexColor(e.def.glowHex)))
-                        if (dist < 8.5f) damagePlayer(e.def.damage * 1.15f, e)
-                    }
+                    executeUniqueBossPattern(e, dx, dz, dist, tierDmgMult)
                 } else if (e.def.aiState == "SUICIDE_DETONATE" && dist <= e.def.attackRange) {
                     shockwaves.add(ShockwaveVfx(e.pos.x, 0.4f, e.pos.z, 0.5f, 4.0f, 0.35f, 0.35f, floatArrayOf(0.95f, 0.65f, 0.1f)))
                     spawnSparks(e.pos.x, 0.8f, e.pos.z, floatArrayOf(0.95f, 0.65f, 0.1f), 14)
-                    if (dist < 3.6f) damagePlayer(e.def.damage, e)
+                    if (dist < 3.6f) damagePlayer(e.def.damage * tierDmgMult, e)
                     iter.remove()
                     continue
                 } else if ((e.def.aiState == "RANGED_HOVER" || e.def.aiState == "RANGED_ADVANCE" || e.def.aiState == "SENTRY_TURRET") && dist <= e.def.attackRange) {
-                    e.attackTimer = 1.85f
+                    e.attackTimer = (1.85f / tierSpeedMult).coerceAtLeast(1.05f)
+                    val glowCol = parseHexColor(e.def.glowHex)
+                    emitSound(SoundEffect.SHOT_ENEMY)
+                    muzzleFlashes.add(MuzzleFlashVfx(e.pos.x, 1.15f, e.pos.z, e.yawDeg, 0.28f, 0.1f, 0.1f, glowCol))
                     projectiles.add(
                         Projectile(
                             pos = Vec3(e.pos.x, 1.15f, e.pos.z),
-                            vx = (dx / dist) * 11.5f,
-                            vz = (dz / dist) * 11.5f,
+                            vx = (dx / dist) * 11.5f * tierSpeedMult,
+                            vz = (dz / dist) * 11.5f * tierSpeedMult,
                             fromPlayer = false,
-                            damage = e.def.damage,
+                            damage = e.def.damage * tierDmgMult,
                             isCrit = false,
                             pierceLeft = 0,
                             life = 2.1f,
-                            color = parseHexColor(e.def.glowHex),
+                            color = glowCol,
                             scale = 0.20f
                         )
                     )
                 } else if (dist <= e.def.attackRange + 0.6f && kotlin.math.abs(playerPos.y - e.pos.y) <= 1.85f) {
                     e.attackTimer = 1.05f
-                    damagePlayer(e.def.damage, e)
+                    emitSound(SoundEffect.STRIKE_SLASH)
+                    damagePlayer(e.def.damage * tierDmgMult, e)
+                }
+            }
+        }
+    }
+
+    private fun executeUniqueBossPattern(
+        e: ActiveEnemy,
+        dx: Float,
+        dz: Float,
+        dist: Float,
+        tierDmgMult: Float
+    ) {
+        val glow = parseHexColor(e.def.glowHex)
+        val baseAng = atan2(dx, dz)
+        val dmg = e.def.damage * tierDmgMult
+        val cdScale = (if (e.phase2) 0.72f else 1.0f) / (1f + (difficultyTier - 1) * 0.10f)
+        val pattern = e.bossAttackCycle % 3
+        e.bossAttackCycle += 1
+
+        when (e.def.id) {
+            "omega_01" -> {
+                // OMEGA-01: Siege Spread / Bull Charge Dash / Double Seismic Tremor Nova
+                when (pattern) {
+                    0 -> {
+                        e.attackTimer = 1.8f * cdScale
+                        val count = if (e.phase2) 7 else 5
+                        emitSound(SoundEffect.SHOT_ENEMY)
+                        muzzleFlashes.add(MuzzleFlashVfx(e.pos.x, 1.6f, e.pos.z, e.yawDeg, 0.65f, 0.14f, 0.14f, glow))
+                        for (i in 0 until count) {
+                            val ang = baseAng + (i - count / 2f) * 0.24f
+                            projectiles.add(Projectile(Vec3(e.pos.x, 1.55f, e.pos.z), sin(ang) * 12.5f, cos(ang) * 12.5f, false, dmg, false, 0, 2.5f, glow, 0.36f))
+                        }
+                    }
+                    1 -> {
+                        e.attackTimer = 2.1f * cdScale
+                        e.bossDashTimer = 0.62f
+                        e.bossDashDirX = dx / dist
+                        e.bossDashDirZ = dz / dist
+                        shockwaves.add(ShockwaveVfx(e.pos.x, 0.35f, e.pos.z, 0.8f, 5.2f, 0.35f, 0.35f, floatArrayOf(1f, 0.45f, 0.15f)))
+                    }
+                    else -> {
+                        e.attackTimer = 2.2f * cdScale
+                        shockwaves.add(ShockwaveVfx(e.pos.x, 0.35f, e.pos.z, 1.0f, 9.8f, 0.55f, 0.55f, floatArrayOf(0.95f, 0.22f, 0.22f)))
+                        shockwaves.add(ShockwaveVfx(e.pos.x, 0.55f, e.pos.z, 0.5f, 6.2f, 0.45f, 0.45f, glow))
+                        if (dist < 9.5f && playerPos.y < 1.8f) {
+                            damagePlayer(dmg * 1.25f, e)
+                        }
+                    }
+                }
+            }
+            "seraph_x" -> {
+                // SERAPH-X: Radial Spiral Lasers / Rapid Aimed Lance / Aerial Dive Blast
+                when (pattern) {
+                    0 -> {
+                        e.attackTimer = 1.65f * cdScale
+                        val bolts = if (e.phase2) 12 else 8
+                        e.bossSpiralOffset += 0.45f
+                        for (i in 0 until bolts) {
+                            val ang = e.bossSpiralOffset + (2f * Math.PI.toFloat() * i / bolts)
+                            projectiles.add(Projectile(Vec3(e.pos.x, 1.8f, e.pos.z), sin(ang) * 11.5f, cos(ang) * 11.5f, false, dmg * 0.9f, false, 0, 2.7f, glow, 0.32f))
+                        }
+                    }
+                    1 -> {
+                        e.attackTimer = 1.5f * cdScale
+                        muzzleFlashes.add(MuzzleFlashVfx(e.pos.x, 1.8f, e.pos.z, e.yawDeg, 0.6f, 0.14f, 0.14f, glow))
+                        for (k in -1..1) {
+                            val ang = baseAng + k * 0.08f
+                            val spd = 17.5f + kotlin.math.abs(k) * 1.5f
+                            projectiles.add(Projectile(Vec3(e.pos.x, 1.7f, e.pos.z), sin(ang) * spd, cos(ang) * spd, false, dmg * 1.1f, false, 0, 2.2f, floatArrayOf(0.95f, 0.35f, 0.95f), 0.30f))
+                        }
+                    }
+                    else -> {
+                        e.attackTimer = 2.0f * cdScale
+                        e.bossDashTimer = 0.48f
+                        e.bossDashDirX = dx / dist
+                        e.bossDashDirZ = dz / dist
+                        shockwaves.add(ShockwaveVfx(playerPos.x, 0.3f, playerPos.z, 0.6f, 6.2f, 0.55f, 0.55f, glow))
+                        if (dist < 7.5f) damagePlayer(dmg * 1.1f, e)
+                    }
+                }
+            }
+            else -> {
+                // TITAN ZERO: Rotational Cross Streams / Triple EMP Cataclysm / Overload Ring Burst
+                when (pattern) {
+                    0 -> {
+                        e.attackTimer = 1.75f * cdScale
+                        val arms = if (e.phase2) 6 else 4
+                        e.bossSpiralOffset += 0.35f
+                        for (a in 0 until arms) {
+                            val ang = e.bossSpiralOffset + (2f * Math.PI.toFloat() * a / arms)
+                            for (layer in 0..1) {
+                                val spd = 10.5f + layer * 4.5f
+                                projectiles.add(Projectile(Vec3(e.pos.x, 1.65f, e.pos.z), sin(ang) * spd, cos(ang) * spd, false, dmg, false, 0, 2.8f, glow, 0.36f))
+                            }
+                        }
+                    }
+                    1 -> {
+                        e.attackTimer = 2.15f * cdScale
+                        shockwaves.add(ShockwaveVfx(e.pos.x, 0.35f, e.pos.z, 1.0f, 11.5f, 0.6f, 0.6f, floatArrayOf(0.95f, 0.25f, 0.35f)))
+                        shockwaves.add(ShockwaveVfx(e.pos.x, 0.55f, e.pos.z, 1.5f, 8.2f, 0.48f, 0.48f, floatArrayOf(0.95f, 0.72f, 0.25f)))
+                        if (dist < 10.5f && playerPos.y < 2.1f) {
+                            damagePlayer(dmg * 1.3f, e)
+                        }
+                    }
+                    else -> {
+                        e.attackTimer = 1.65f * cdScale
+                        val count = if (e.phase2) 9 else 6
+                        muzzleFlashes.add(MuzzleFlashVfx(e.pos.x, 1.65f, e.pos.z, e.yawDeg, 0.75f, 0.15f, 0.15f, glow))
+                        for (i in 0 until count) {
+                            val ang = baseAng + (i - count / 2f) * 0.20f
+                            projectiles.add(Projectile(Vec3(e.pos.x, 1.6f, e.pos.z), sin(ang) * 14f, cos(ang) * 14f, false, dmg * 1.05f, false, 0, 2.5f, floatArrayOf(1f, 0.25f, 0.35f), 0.38f))
+                        }
+                    }
                 }
             }
         }
@@ -1313,7 +1702,28 @@ class GameSimulation(
         if (cryoSlow > 0f) {
             e.cryoTimer = 3.0f
         }
-        spawnSparks(e.pos.x, 1.0f * e.def.scale, e.pos.z, if (isCrit) floatArrayOf(0.95f, 0.78f, 0.25f) else weaponCol, if (isCrit) 6 else 3)
+        val impactY = 1.25f * e.def.scale
+        val sparkCol = if (isCrit) floatArrayOf(0.98f, 0.80f, 0.22f) else weaponCol
+        emitSound(SoundEffect.HIT_IMPACT)
+        spawnSparks(e.pos.x, impactY, e.pos.z, sparkCol, if (isCrit) 9 else 4)
+        if (isCrit) {
+            shockwaves.add(ShockwaveVfx(e.pos.x, impactY * 0.6f, e.pos.z, 0.2f, 1.55f, 0.22f, 0.22f, sparkCol))
+        }
+        if (damageNumbers.size < 22) {
+            damageNumbers.add(
+                DamageNumber(
+                    uid = nextUid++,
+                    x = e.pos.x + (rng.nextFloat() - 0.5f) * 0.6f,
+                    y = impactY + 0.55f,
+                    z = e.pos.z + (rng.nextFloat() - 0.5f) * 0.6f,
+                    amount = finalDmg.toInt().coerceAtLeast(1),
+                    isCrit = isCrit,
+                    isPlayerHit = false,
+                    life = 0.72f,
+                    maxLife = 0.72f
+                )
+            )
+        }
     }
 
     private fun handleEnemyDefeated(e: ActiveEnemy) {
@@ -1321,7 +1731,7 @@ class GameSimulation(
         if (lifestealOnKill > 0f) hp = min(maxHp, hp + lifestealOnKill)
         if (shieldOnKill > 0f) shield = min(maxShield, shield + shieldOnKill)
 
-        spawnSparks(e.pos.x, 1.0f, e.pos.z, parseHexColor(e.def.glowHex), if (e.isBoss) 30 else 10)
+        spawnSparks(e.pos.x, 1.0f, e.pos.z, parseHexColor(e.def.glowHex), if (e.isBoss) 36 else 12)
         if (deathExplosionDamage > 0f) {
             shockwaves.add(ShockwaveVfx(e.pos.x, 0.3f, e.pos.z, 0.4f, 3.6f, 0.3f, 0.3f, floatArrayOf(0.95f, 0.55f, 0.15f)))
             for (other in enemies) {
@@ -1338,12 +1748,15 @@ class GameSimulation(
         }
 
         if (e.isBoss) {
+            bossDuelActive = false
             bossesDefeatedInRun += 1
-            statusBannerText = "${e.def.name} DESTRUÍDO! +${e.def.creditReward} CRÉDITOS"
-            statusBannerTimer = 3.5f
-            if (e.def.id == "titan_zero") {
-                status = RunStatus.VICTORY
-            }
+            difficultyTier = 1 + bossesDefeatedInRun
+            nextBossElapsedTarget = elapsedSeconds + 64f
+            nextBossKillsTarget = kills + 26 + bossesDefeatedInRun * 6
+            statusBannerText = "${e.def.name} DERROTADO! NÍVEL DE AMEAÇA $difficultyTier!"
+            statusBannerTimer = 3.8f
+            shockwaves.add(ShockwaveVfx(e.pos.x, 0.4f, e.pos.z, 1.0f, 14.0f, 0.7f, 0.7f, floatArrayOf(0.22f, 0.85f, 0.98f)))
+            spawnArenaCollectibleAt(e.pos.x, e.pos.z, preferPet = bossesDefeatedInRun % 2 == 1)
         }
     }
 
@@ -1354,11 +1767,30 @@ class GameSimulation(
         playerHitFlash = 0.20f
 
         if (shield > 0f) {
+            emitSound(SoundEffect.DEFENSE_SHIELD)
             val absorbed = min(shield, dmg)
             shield -= absorbed
             hp -= (dmg - absorbed)
         } else {
+            emitSound(SoundEffect.HIT_IMPACT)
             hp -= dmg
+        }
+
+        spawnSparks(playerPos.x, playerPos.y + 1.1f, playerPos.z, floatArrayOf(0.95f, 0.20f, 0.28f), 7)
+        if (damageNumbers.size < 22) {
+            damageNumbers.add(
+                DamageNumber(
+                    uid = nextUid++,
+                    x = playerPos.x,
+                    y = playerPos.y + 1.85f,
+                    z = playerPos.z,
+                    amount = dmg.toInt().coerceAtLeast(1),
+                    isCrit = false,
+                    isPlayerHit = true,
+                    life = 0.75f,
+                    maxLife = 0.75f
+                )
+            )
         }
 
         if (attacker != null && thornsRatio > 0f) {
@@ -1399,6 +1831,75 @@ class GameSimulation(
         }
     }
 
+    private fun updateArenaCollectibles(dt: Float) {
+        if (!bossDuelActive && arenaCollectibles.size < 2) {
+            collectibleSpawnTimer -= dt
+            if (collectibleSpawnTimer <= 0f) {
+                collectibleSpawnTimer = 34f
+                val ang = rng.nextFloat() * 2f * Math.PI.toFloat()
+                val rad = 10f + rng.nextFloat() * 14f
+                val cx = (playerPos.x + cos(ang) * rad).coerceIn(-25f, 25f)
+                val cz = (playerPos.z + sin(ang) * rad).coerceIn(-25f, 25f)
+                spawnArenaCollectibleAt(cx, cz, preferPet = rng.nextFloat() < 0.35f)
+            }
+        }
+
+        val iter = arenaCollectibles.iterator()
+        while (iter.hasNext()) {
+            val col = iter.next()
+            col.life -= dt
+            if (col.life <= 0f) { iter.remove(); continue }
+            if (playerPos.distTo(col.pos.x, col.pos.z) <= 1.55f && kotlin.math.abs(playerPos.y - col.pos.y) <= 2.2f) {
+                collectiblesFoundInRun += 1
+                creditsEarned += 35
+                gainXp(45)
+                shield = min(maxShield, shield + maxShield * 0.25f)
+                shockwaves.add(ShockwaveVfx(col.pos.x, col.pos.y + 0.3f, col.pos.z, 0.3f, 3.8f, 0.45f, 0.45f, col.color))
+                spawnSparks(col.pos.x, col.pos.y + 0.6f, col.pos.z, col.color, 18)
+
+                if (col.isPetCapsule) {
+                    unlockedPetCache.add(col.targetId)
+                    statusBannerText = "MASCOTE COLETADO: ${col.label.uppercase()}!"
+                } else {
+                    discoveredRelicCache.add(col.targetId)
+                    statusBannerText = "COLECIONÁVEL: ${col.label.uppercase()} (+35 CR)"
+                }
+                statusBannerTimer = 3.5f
+                emitSound(SoundEffect.COLLECTIBLE_CHIME)
+                onCollectibleFound(col.isPetCapsule, col.targetId)
+                iter.remove()
+            }
+        }
+    }
+
+    private fun spawnArenaCollectibleAt(x: Float, z: Float, preferPet: Boolean) {
+        val lockedPets = catalog.pets.filter { it.id !in unlockedPetCache }
+        if (preferPet && lockedPets.isNotEmpty()) {
+            val pet = lockedPets[rng.nextInt(lockedPets.size)]
+            val pos = Vec3(x, 0.55f, z)
+            for (box in world.colliders) {
+                if (box.overlapsFootprintXZ(x, z, 0.5f) && box.maxY <= 5.5f) {
+                    pos.y = box.maxY + 0.55f
+                    break
+                }
+            }
+            arenaCollectibles.add(ArenaCollectible(nextUid++, pos, true, pet.id, pet.name, parseHexColor(pet.glowHex)))
+            return
+        }
+
+        val relicPool = catalog.relics.filter { it.id !in discoveredRelicCache }.ifEmpty { catalog.relics }
+        if (relicPool.isEmpty()) return
+        val relic = relicPool[rng.nextInt(relicPool.size)]
+        val pos = Vec3(x, 0.55f, z)
+        for (box in world.colliders) {
+            if (box.overlapsFootprintXZ(x, z, 0.5f) && box.maxY <= 5.5f) {
+                pos.y = box.maxY + 0.55f
+                break
+            }
+        }
+        arenaCollectibles.add(ArenaCollectible(nextUid++, pos, false, relic.id, relic.name, parseHexColor(relic.colorHex)))
+    }
+
     private fun gainXp(amount: Int) {
         xp += amount
         if (xp >= xpToNext) {
@@ -1407,6 +1908,7 @@ class GameSimulation(
             xpToNext = (xpToNext * 1.28f + 35).toInt()
             pendingChoices = rollEvolutionCards(3)
             if (pendingChoices.isNotEmpty()) {
+                emitSound(SoundEffect.POWER_SKILL)
                 status = RunStatus.LEVEL_UP
             }
         }
@@ -1415,7 +1917,6 @@ class GameSimulation(
     private fun rollEvolutionCards(count: Int): List<EvolutionCardDef> {
         val allAvailable = catalog.cards.filter { (cardStacks[it.id] ?: 0) < it.maxStacks }
         if (allAvailable.isEmpty()) return emptyList()
-        // Prioritize player's constructed Deck Build (75% weight boost or pool preference)
         val deckAvailable = allAvailable.filter { it.id in deckCardIds }
         val pool = (if (deckAvailable.size >= count) deckAvailable else allAvailable).toMutableList()
         val chosen = mutableListOf<EvolutionCardDef>()
@@ -1440,6 +1941,25 @@ class GameSimulation(
             s.life -= dt
             if (s.life <= 0f) sIter.remove()
         }
+        val slIter = slashArcs.iterator()
+        while (slIter.hasNext()) {
+            val sl = slIter.next()
+            sl.life -= dt
+            if (sl.life <= 0f) slIter.remove()
+        }
+        val mIter = muzzleFlashes.iterator()
+        while (mIter.hasNext()) {
+            val mf = mIter.next()
+            mf.life -= dt
+            if (mf.life <= 0f) mIter.remove()
+        }
+        val dIter = damageNumbers.iterator()
+        while (dIter.hasNext()) {
+            val dn = dIter.next()
+            dn.life -= dt
+            dn.y += 1.65f * dt
+            if (dn.life <= 0f) dIter.remove()
+        }
         val pIter = sparks.iterator()
         while (pIter.hasNext()) {
             val p = pIter.next()
@@ -1453,7 +1973,7 @@ class GameSimulation(
     }
 
     private fun spawnSparks(x: Float, y: Float, z: Float, color: FloatArray, count: Int) {
-        if (sparks.size > 160) return
+        if (sparks.size > 180) return
         repeat(count) {
             sparks.add(
                 ParticleSpark(
@@ -1469,26 +1989,24 @@ class GameSimulation(
     }
 
     private fun updateWaveDirector(dt: Float) {
-        if (!omegaSpawned && elapsedSeconds >= 65f) {
-            omegaSpawned = true
-            catalog.bosses.firstOrNull { it.id == "omega_01" }?.let { spawnBoss(it) }
-        }
-        if (!seraphSpawned && elapsedSeconds >= 155f) {
-            seraphSpawned = true
-            catalog.bosses.firstOrNull { it.id == "seraph_x" }?.let { spawnBoss(it) }
-        }
-        if (!titanSpawned && elapsedSeconds >= 250f) {
-            titanSpawned = true
-            catalog.bosses.firstOrNull { it.id == "titan_zero" }?.let { spawnBoss(it) }
+        if (!bossDuelActive && catalog.bosses.isNotEmpty() &&
+            (elapsedSeconds >= nextBossElapsedTarget || kills >= nextBossKillsTarget)
+        ) {
+            val bossDef = catalog.bosses[bossesDefeatedInRun % catalog.bosses.size]
+            spawnBoss(bossDef)
+            return
         }
 
+        // Strict 1v1 Boss Duel: stop regular mob spawns whenever a boss is active!
+        if (bossDuelActive) return
+
         spawnTimer -= dt
-        val maxActive = (12 + waveNumber * 3).coerceAtMost(30)
+        val maxActive = (12 + waveNumber * 3 + (difficultyTier - 1) * 4).coerceAtMost(36)
         if (spawnTimer <= 0f && enemies.size < maxActive) {
-            spawnTimer = (2.1f - waveNumber * 0.14f).coerceAtLeast(0.75f)
+            spawnTimer = (2.1f - waveNumber * 0.14f - (difficultyTier - 1) * 0.16f).coerceAtLeast(0.55f)
             val unlockedPool = when {
                 elapsedSeconds < 25f -> listOf("rastejador", "drone_voador", "soldado_robotico")
-                elapsedSeconds < 55f -> listOf("rastejador", "drone_voador", "soldado_robotico", "aranha_industrial", "robo_explosivo")
+                elapsedSeconds < 50f -> listOf("rastejador", "drone_voador", "soldado_robotico", "aranha_industrial", "robo_explosivo")
                 else -> catalog.enemies.map { it.id }
             }
             val pickId = unlockedPool[rng.nextInt(unlockedPool.size)]
@@ -1502,18 +2020,37 @@ class GameSimulation(
     }
 
     private fun spawnBoss(bossDef: EnemyDef) {
+        bossDuelActive = true
+        // Seamless transition to 1v1 Boss Arena: dissolve remaining regular mobs without any loading screen
+        val iter = enemies.iterator()
+        while (iter.hasNext()) {
+            val mob = iter.next()
+            if (!mob.isBoss) {
+                spawnSparks(mob.pos.x, 1.0f, mob.pos.z, floatArrayOf(0.55f, 0.22f, 0.85f), 8)
+                iter.remove()
+            }
+        }
+
         val ang = rng.nextFloat() * 2f * Math.PI.toFloat()
-        val sx = (playerPos.x + cos(ang) * 18f).coerceIn(-28f, 28f)
-        val sz = (playerPos.z + sin(ang) * 18f).coerceIn(-28f, 28f)
+        val sx = (playerPos.x + cos(ang) * 16f).coerceIn(-28f, 28f)
+        val sz = (playerPos.z + sin(ang) * 16f).coerceIn(-28f, 28f)
         spawnEnemyAt(bossDef, isBoss = true, sx, sz)
         bossBannerTimer = 4.0f
-        statusBannerText = "ALERTA CRÍTICO: ${bossDef.name} DETECTADO"
+        statusBannerText = "DUELO SOMBRIO: ${bossDef.name} (AMEAÇA $difficultyTier)"
         statusBannerTimer = 4.0f
-        shockwaves.add(ShockwaveVfx(sx, 0.5f, sz, 1f, 12f, 0.7f, 0.7f, parseHexColor(bossDef.glowHex)))
+        emitSound(SoundEffect.BOSS_ALERT)
+        shockwaves.add(ShockwaveVfx(sx, 0.5f, sz, 1f, 13f, 0.7f, 0.7f, parseHexColor(bossDef.glowHex)))
+    }
+
+    private fun emitSound(effect: SoundEffect) {
+        if (soundEnabled) {
+            onSoundEvent(effect)
+        }
     }
 
     private fun spawnEnemyAt(def: EnemyDef, isBoss: Boolean, x: Float, z: Float) {
-        val hpScale = if (isBoss) 1f else (1f + (elapsedSeconds / 90f) * 0.45f)
+        val tierHpScale = 1f + (difficultyTier - 1) * 0.45f
+        val hpScale = if (isBoss) tierHpScale else (1f + (elapsedSeconds / 90f) * 0.45f) * tierHpScale
         val hpVal = def.maxHp * hpScale
         val pos = Vec3(x, 0f, z)
         for (box in world.colliders) {
@@ -1532,7 +2069,7 @@ class GameSimulation(
         )
     }
 
-    fun snapshotHud(): HudSnapshot {
+    fun snapshotHud(damagePopups: List<ProjectedDamageText> = emptyList()): HudSnapshot {
         val activeBoss = enemies.firstOrNull { it.isBoss }
         return HudSnapshot(
             status = status,
@@ -1547,7 +2084,7 @@ class GameSimulation(
             kills = kills,
             elapsedSeconds = elapsedSeconds,
             waveNumber = waveNumber,
-            weatherLabel = currentWeather.label,
+            weatherLabel = if (bossDuelActive) "Duelo Sombrio" else currentWeather.label,
             dodgeCooldown = dodgeCooldown,
             dodgeMaxCooldown = dodgeMaxCooldown * cooldownMult,
             activeCooldown = activeSkillCooldown,
@@ -1562,7 +2099,14 @@ class GameSimulation(
             levelUpChoices = pendingChoices,
             acquiredCards = cardStacks.toMap(),
             bossesDefeatedInRun = bossesDefeatedInRun,
-            statusBannerText = statusBannerText
+            statusBannerText = statusBannerText,
+            bossDuelActive = bossDuelActive,
+            bossMoodBlend = bossMoodBlend,
+            difficultyTier = difficultyTier,
+            playerDamageFlash = (playerHitFlash / 0.20f).coerceIn(0f, 1f),
+            activePetName = equippedPet?.name,
+            collectiblesFoundInRun = collectiblesFoundInRun,
+            damagePopups = damagePopups
         )
     }
 }

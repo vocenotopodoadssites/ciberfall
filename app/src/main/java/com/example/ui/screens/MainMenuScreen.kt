@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.CharacterClassDef
+import com.example.data.PetDef
 import com.example.data.PlayerSaveData
 import com.example.data.SkinDef
 import com.example.engine3d.CharacterTurntable3D
@@ -68,6 +69,7 @@ fun MainMenuScreen(
     accountLevel: Int,
     selectedClass: CharacterClassDef,
     equippedSkin: SkinDef,
+    equippedPet: PetDef? = null,
     onPlay: () -> Unit,
     onNavigateCharacters: () -> Unit,
     onNavigateDeck: () -> Unit,
@@ -85,6 +87,7 @@ fun MainMenuScreen(
         CharacterTurntable3D(
             classDef = selectedClass,
             skinDef = equippedSkin,
+            petDef = equippedPet,
             showLobbyAtmosphere = true,
             modifier = Modifier.fillMaxSize()
         )
@@ -240,7 +243,7 @@ fun MainMenuScreen(
                                 color = TextPrimary
                             )
                             Text(
-                                text = selectedClass.role,
+                                text = if (equippedPet != null) "${selectedClass.role}  •  Mascote: ${equippedPet.name}" else selectedClass.role,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary
                             )

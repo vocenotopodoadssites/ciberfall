@@ -53,11 +53,13 @@ fun NeonfallApp(vm: MainViewModel = viewModel()) {
         composable(Routes.MAIN_MENU) {
             val cls = vm.selectedClass(save)
             val skin = vm.equippedSkin(save, cls.id)
+            val pet = vm.equippedPet(save)
             MainMenuScreen(
                 save = save,
                 accountLevel = vm.playerAccountLevel(save),
                 selectedClass = cls,
                 equippedSkin = skin,
+                equippedPet = pet,
                 onPlay = {
                     vm.startNewRun(triggerHaptic)
                     navController.navigate(Routes.GAMEPLAY)
@@ -102,9 +104,13 @@ fun NeonfallApp(vm: MainViewModel = viewModel()) {
             ShopInventoryScreen(
                 classes = vm.catalog.classes,
                 skins = vm.catalog.skins,
+                pets = vm.catalog.pets,
+                relics = vm.catalog.relics,
+                equippedPet = vm.equippedPet(save),
                 save = save,
                 onUnlockClass = vm::unlockClass,
                 onBuyOrEquipSkin = vm::buyOrEquipSkin,
+                onBuyOrEquipPet = vm::buyOrEquipPet,
                 onBack = { navController.popBackStack() }
             )
         }
@@ -136,6 +142,7 @@ fun NeonfallApp(vm: MainViewModel = viewModel()) {
                 onToggleRain = { vm.updateSettings(rainEnabled = it) },
                 onToggleAutoAttack = { vm.updateSettings(autoAttack = it) },
                 onToggleHaptics = { vm.updateSettings(haptics = it) },
+                onToggleSound = { vm.updateSettings(soundEnabled = it) },
                 onBack = { navController.popBackStack() }
             )
         }
@@ -152,6 +159,7 @@ fun NeonfallApp(vm: MainViewModel = viewModel()) {
                     onSelectCard = vm::chooseCard,
                     onUpdateQuality = { vm.updateSettings(quality = it) },
                     onUpdateCameraDist = { vm.updateSettings(cameraDistance = it) },
+                    onToggleSound = { vm.updateSettings(soundEnabled = it) },
                     onPlayAgain = { vm.startNewRun(triggerHaptic) },
                     onExitToMenu = {
                         vm.abandonRun()

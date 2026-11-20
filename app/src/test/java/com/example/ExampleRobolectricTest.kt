@@ -2,6 +2,8 @@ package com.example
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.example.audio.ProceduralWaveSynth
+import com.example.audio.SoundEffect
 import com.example.data.GameDataRepository
 import com.example.data.PlayerSaveData
 import com.example.data.skinsForClass
@@ -38,6 +40,8 @@ class ExampleRobolectricTest {
         assertEquals(3, catalog.bosses.size)
         assertEquals(56, catalog.cards.size)
         assertEquals(14, catalog.abilities.size)
+        assertEquals(5, catalog.pets.size)
+        assertEquals(6, catalog.relics.size)
     }
 
     @Test
@@ -120,5 +124,106 @@ class ExampleRobolectricTest {
                 idx += 6
             }
         }
+    }
+
+    @Test
+    fun `boss duel stops mob spawns darkens mood and escalates difficulty tier on defeat`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val catalog = GameDataRepository(context).catalog
+        val berserker = catalog.classes.first { it.id == "berserker" }
+        val sim = GameSimulation(catalog, PlayerSaveData(), berserker, berserker.palette)
+
+        assertTrue(sim.equippedPet != null)
+        assertTrue(!sim.bossDuelActive)
+        sim.maxHp = 10000f
+        sim.hp = 10000f
+
+        // Advance simulation past boss milestone (52s elapsed)
+        repeat(60 * 55) {
+            if (sim.status == RunStatus.LEVEL_UP && sim.pendingChoices.isNotEmpty()) {
+                sim.applyCard(sim.pendingChoices.first())
+            }
+            if (sim.status == RunStatus.PLAYING) {
+                sim.step(1f / 60f)
+            }
+            if (sim.bossDuelActive) return@repeat
+        }
+
+        assertTrue("Boss 1v1 duel should trigger automatically", sim.bossDuelActive)
+        assertEquals(1, sim.enemies.count { it.isBoss })
+        assertEquals("Only the boss should remain in 1v1 duel", 0, sim.enemies.count { !it.isBoss })
+
+        // Step a little more to advance dark atmosphere blend
+        repeat(30) {
+            if (sim.status == RunStatus.LEVEL_UP && sim.pendingChoices.isNotEmpty()) {
+                sim.applyCard(sim.pendingChoices.first())
+            }
+            sim.step(0.03f)
+        }
+        assertTrue("bossMoodBlend should transition toward dark boss duel", sim.bossMoodBlend > 0.25f)
+
+        // Defeat the boss and verify difficulty escalates & game continues (endless progression)
+        if (sim.status == RunStatus.LEVEL_UP && sim.pendingChoices.isNotEmpty()) {
+            sim.applyCard(sim.pendingChoices.first())
+        }
+        val boss = sim.enemies.first { it.isBoss }
+        boss.hp = -1f
+        sim.step(0.05f)
+        if (sim.status == RunStatus.LEVEL_UP && sim.pendingChoices.isNotEmpty()) {
+            sim.applyCard(sim.pendingChoices.first())
+        }
+        assertEquals(RunStatus.PLAYING, sim.status)
+        assertTrue(sim.bossesDefeatedInRun >= 1)
+        assertTrue(sim.difficultyTier >= 2)
+        assertTrue(!sim.bossDuelActive)
+    }
+
+    @Test
+    fun `sound synthesizer creates valid wavs and simulation emits combat footstep jump defense and power sfx`() {
+        for (effect in SoundEffect.entries) {
+            val wav = ProceduralWaveSynth.synthesizeWav(effect)
+            assertTrue("WAV must have RIFF header + PCM payload", wav.size > 44)
+            assertEquals('R'.code.toByte(), wav[0])
+            assertEquals('I'.code.toByte(), wav[1])
+            assertEquals('F'.code.toByte(), wav[2])
+            assertEquals('F'.code.toByte(), wav[3])
+            assertEquals('W'.code.toByte(), wav[8])
+            assertEquals('A'.code.toByte(), wav[9])
+            assertEquals('V'.code.toByte(), wav[10])
+            assertEquals('E'.code.toByte(), wav[11])
+        }
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val catalog = GameDataRepository(context).catalog
+        val berserker = catalog.classes.first { it.id == "berserker" }
+        val atirador = catalog.classes.first { it.id == "atirador" }
+        val emitted = mutableSetOf<SoundEffect>()
+
+        val meleeSim = GameSimulation(catalog, PlayerSaveData(), berserker, berserker.palette) { emitted.add(it) }
+        meleeSim.moveInputY = 1.0f
+        repeat(28) { meleeSim.step(0.02f) } // triggers footsteps
+        meleeSim.triggerDodge() // defense/evade sound
+        meleeSim.triggerActiveAbility() // power + strike sound
+        meleeSim.triggerManualAttack() // strike slash
+
+        // Finish dodge and then push into container to climb & perform parkour mantle flip
+        repeat(20) { meleeSim.step(0.02f) }
+        meleeSim.cameraYawDeg = 0f
+        meleeSim.playerPos.x = 0f
+        meleeSim.playerPos.y = 0f
+        meleeSim.playerPos.z = -20.8f
+        meleeSim.moveInputX = 0f
+        meleeSim.moveInputY = 1.0f
+        repeat(45) { meleeSim.step(0.02f) }
+
+        val rangedSim = GameSimulation(catalog, PlayerSaveData(), atirador, atirador.palette) { emitted.add(it) }
+        rangedSim.triggerManualAttack() // shot plasma
+
+        assertTrue(SoundEffect.FOOTSTEP in emitted)
+        assertTrue(SoundEffect.DEFENSE_SHIELD in emitted)
+        assertTrue(SoundEffect.POWER_SKILL in emitted)
+        assertTrue(SoundEffect.STRIKE_SLASH in emitted)
+        assertTrue(SoundEffect.SHOT_PLASMA in emitted)
+        assertTrue(SoundEffect.JUMP_PARKOUR in emitted)
     }
 }

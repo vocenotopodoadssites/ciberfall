@@ -3,6 +3,7 @@ package com.example.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.audio.SoundEffectsEngine
 import com.example.data.AchievementDef
 import com.example.data.CardCategory
 import com.example.data.CharacterClassDef
@@ -11,6 +12,7 @@ import com.example.data.GameCatalog
 import com.example.data.GameDataRepository
 import com.example.data.GraphicsQuality
 import com.example.data.PermanentUpgradeDef
+import com.example.data.PetDef
 import com.example.data.PlayerSaveData
 import com.example.data.SaveRepository
 import com.example.data.SkinDef
@@ -28,6 +30,7 @@ import kotlinx.coroutines.launch
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val dataRepo = GameDataRepository(application)
     private val saveRepo = SaveRepository(application)
+    private val soundEngine = SoundEffectsEngine(application)
 
     val catalog: GameCatalog = dataRepo.catalog
     val permanentUpgrades: List<PermanentUpgradeDef> = dataRepo.permanentUpgrades
@@ -47,6 +50,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var runFinalized = false
 
+    init {
+        viewModelScope.launch {
+            saveState.collect { s ->
+                soundEngine.enabled = s.soundEnabled
+            }
+        }
+    }
+
     fun playerAccountLevel(save: PlayerSaveData): Int {
         val score = save.totalKills + save.totalBossesDefeated * 35 + save.totalRuns * 12
         return 1 + (score / 40)
@@ -60,6 +71,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val skinId = save.equippedSkins[classId] ?: "padrao"
         return catalog.skins.firstOrNull { it.id == skinId && (it.classId == null || it.classId == classId) }
             ?: catalog.skins.first()
+    }
+
+    fun equippedPet(save: PlayerSaveData): PetDef? {
+        val petId = save.equippedPetId ?: return null
+        return catalog.pets.firstOrNull { it.id == petId }
+    }
+
+    fun buyOrEquipPet(pet: PetDef) {
+        viewModelScope.launch {
+            saveRepo.updateSave { s ->
+                val owned = pet.id in s.unlockedPetIds
+                if (owned) {
+                    val nextEquipped = if (s.equippedPetId == pet.id) null else pet.id
+                    s.copy(equippedPetId = nextEquipped)
+                } else if (s.credits >= pet.cost) {
+                    s.copy(
+                        credits = s.credits - pet.cost,
+                        unlockedPetIds = s.unlockedPetIds + pet.id,
+                        equippedPetId = pet.id
+                    )
+                } else {
+                    s
+                }
+            }
+        }
+    }
+
+    fun recordDiscoveredCollectible(isPet: Boolean, targetId: String) {
+        viewModelScope.launch {
+            saveRepo.updateSave { s ->
+                if (isPet) {
+                    s.copy(
+                        unlockedPetIds = s.unlockedPetIds + targetId,
+                        equippedPetId = s.equippedPetId ?: targetId
+                    )
+                } else {
+                    s.copy(discoveredRelicIds = s.discoveredRelicIds + targetId)
+                }
+            }
+        }
     }
 
     fun selectClass(classId: String) {
@@ -183,7 +234,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         cameraDistance: Float? = null,
         rainEnabled: Boolean? = null,
         autoAttack: Boolean? = null,
-        haptics: Boolean? = null
+        haptics: Boolean? = null,
+        soundEnabled: Boolean? = null
     ) {
         viewModelScope.launch {
             saveRepo.updateSave { s ->
@@ -192,14 +244,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     cameraDistance = cameraDistance ?: s.cameraDistance,
                     rainEnabled = rainEnabled ?: s.rainEnabled,
                     autoAttackEnabled = autoAttack ?: s.autoAttackEnabled,
-                    hapticsEnabled = haptics ?: s.hapticsEnabled
+                    hapticsEnabled = haptics ?: s.hapticsEnabled,
+                    soundEnabled = soundEnabled ?: s.soundEnabled
                 )
+                soundEngine.enabled = updated.soundEnabled
                 _activeSimulation.value?.let { sim ->
                     sim.graphicsQuality = updated.graphicsQuality
                     sim.desiredCameraDistance = updated.cameraDistance.coerceIn(11f, 32f)
                     sim.rainEnabled = updated.rainEnabled
                     sim.autoAttackEnabled = updated.autoAttackEnabled
                     sim.hapticsEnabled = updated.hapticsEnabled
+                    sim.soundEnabled = updated.soundEnabled
                 }
                 updated
             }
@@ -211,8 +266,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val cls = selectedClass(save)
         val skin = equippedSkin(save, cls.id)
         val pal = resolvePalette(cls, skin)
+        soundEngine.enabled = save.soundEnabled
         runFinalized = false
-        val sim = GameSimulation(catalog, save, cls, pal, onHaptic, skin.accentStyle)
+        val sim = GameSimulation(
+            catalog = catalog,
+            save = save,
+            classDef = cls,
+            palette = pal,
+            onHapticEvent = onHaptic,
+            skinStyle = skin.accentStyle,
+            onCollectibleFound = ::recordDiscoveredCollectible,
+            onSoundEvent = soundEngine::play
+        )
         _activeSimulation.value = sim
         _hudState.value = sim.snapshotHud()
     }
@@ -270,5 +335,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        soundEngine.release()
     }
 }

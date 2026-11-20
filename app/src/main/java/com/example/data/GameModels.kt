@@ -145,13 +145,36 @@ data class AchievementDef(
     val metric: String
 )
 
+data class PetDef(
+    val id: String,
+    val name: String,
+    val archetype: String,
+    val rarity: CardRarity,
+    val cost: Int,
+    val primaryHex: String,
+    val glowHex: String,
+    val passiveDesc: String,
+    val bonusType: String,
+    val bonusValue: Float
+)
+
+data class RelicDef(
+    val id: String,
+    val name: String,
+    val category: String,
+    val description: String,
+    val colorHex: String
+)
+
 data class GameCatalog(
     val classes: List<CharacterClassDef>,
     val skins: List<SkinDef>,
     val abilities: Map<String, AbilityDef>,
     val enemies: List<EnemyDef>,
     val bosses: List<EnemyDef>,
-    val cards: List<EvolutionCardDef>
+    val cards: List<EvolutionCardDef>,
+    val pets: List<PetDef> = emptyList(),
+    val relics: List<RelicDef> = emptyList()
 )
 
 val DEFAULT_DECK_CARD_IDS = setOf(
@@ -184,7 +207,11 @@ data class PlayerSaveData(
     val cameraDistance: Float = 19.5f,
     val rainEnabled: Boolean = true,
     val autoAttackEnabled: Boolean = true,
-    val hapticsEnabled: Boolean = true
+    val hapticsEnabled: Boolean = true,
+    val soundEnabled: Boolean = true,
+    val unlockedPetIds: Set<String> = setOf("k9_cyber"),
+    val equippedPetId: String? = "k9_cyber",
+    val discoveredRelicIds: Set<String> = emptySet()
 )
 
 fun parseHexColor(hex: String, fallback: FloatArray = floatArrayOf(0.5f, 0.5f, 0.5f)): FloatArray {

@@ -46,6 +46,7 @@ fun SettingsScreen(
     onToggleRain: (Boolean) -> Unit,
     onToggleAutoAttack: (Boolean) -> Unit,
     onToggleHaptics: (Boolean) -> Unit,
+    onToggleSound: (Boolean) -> Unit = {},
     onBack: () -> Unit
 ) {
     Column(
@@ -137,6 +138,13 @@ fun SettingsScreen(
                 subtitle = "Pulso tátil ao usar esquiva e habilidades especiais.",
                 checked = save.hapticsEnabled,
                 onCheckedChange = onToggleHaptics
+            )
+            Spacer(Modifier.height(10.dp))
+            SettingSwitchRow(
+                title = "Efeitos Sonoros (SFX)",
+                subtitle = "Sons de golpes, tiros, defesa, poderes, pulos e passos.",
+                checked = save.soundEnabled,
+                onCheckedChange = onToggleSound
             )
             Spacer(Modifier.height(24.dp))
         }

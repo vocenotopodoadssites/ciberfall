@@ -35,6 +35,10 @@ class SaveRepository(private val context: Context) {
         val RAIN_ENABLED = booleanPreferencesKey("rain_enabled")
         val AUTO_ATTACK = booleanPreferencesKey("auto_attack")
         val HAPTICS = booleanPreferencesKey("haptics")
+        val SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
+        val UNLOCKED_PETS = stringPreferencesKey("unlocked_pets")
+        val EQUIPPED_PET = stringPreferencesKey("equipped_pet")
+        val DISCOVERED_RELICS = stringPreferencesKey("discovered_relics")
     }
 
     val saveFlow: Flow<PlayerSaveData> = context.neonfallDataStore.data.map { prefs ->
@@ -59,7 +63,12 @@ class SaveRepository(private val context: Context) {
             cameraDistance = prefs[Keys.CAMERA_DISTANCE] ?: defaultSave.cameraDistance,
             rainEnabled = prefs[Keys.RAIN_ENABLED] ?: true,
             autoAttackEnabled = prefs[Keys.AUTO_ATTACK] ?: true,
-            hapticsEnabled = prefs[Keys.HAPTICS] ?: true
+            hapticsEnabled = prefs[Keys.HAPTICS] ?: true,
+            soundEnabled = prefs[Keys.SOUND_ENABLED] ?: true,
+            unlockedPetIds = parseSet(prefs[Keys.UNLOCKED_PETS], defaultSave.unlockedPetIds),
+            equippedPetId = prefs[Keys.EQUIPPED_PET]?.takeIf { it.isNotBlank() && it != "NONE" }
+                ?: if (prefs.contains(Keys.EQUIPPED_PET)) null else defaultSave.equippedPetId,
+            discoveredRelicIds = parseSet(prefs[Keys.DISCOVERED_RELICS], emptySet())
         )
     }
 
@@ -86,7 +95,12 @@ class SaveRepository(private val context: Context) {
                 cameraDistance = prefs[Keys.CAMERA_DISTANCE] ?: defaultSave.cameraDistance,
                 rainEnabled = prefs[Keys.RAIN_ENABLED] ?: true,
                 autoAttackEnabled = prefs[Keys.AUTO_ATTACK] ?: true,
-                hapticsEnabled = prefs[Keys.HAPTICS] ?: true
+                hapticsEnabled = prefs[Keys.HAPTICS] ?: true,
+                soundEnabled = prefs[Keys.SOUND_ENABLED] ?: true,
+                unlockedPetIds = parseSet(prefs[Keys.UNLOCKED_PETS], defaultSave.unlockedPetIds),
+                equippedPetId = prefs[Keys.EQUIPPED_PET]?.takeIf { it.isNotBlank() && it != "NONE" }
+                    ?: if (prefs.contains(Keys.EQUIPPED_PET)) null else defaultSave.equippedPetId,
+                discoveredRelicIds = parseSet(prefs[Keys.DISCOVERED_RELICS], emptySet())
             )
             val updated = transform(current)
             prefs[Keys.CREDITS] = updated.credits
@@ -107,6 +121,10 @@ class SaveRepository(private val context: Context) {
             prefs[Keys.RAIN_ENABLED] = updated.rainEnabled
             prefs[Keys.AUTO_ATTACK] = updated.autoAttackEnabled
             prefs[Keys.HAPTICS] = updated.hapticsEnabled
+            prefs[Keys.SOUND_ENABLED] = updated.soundEnabled
+            prefs[Keys.UNLOCKED_PETS] = encodeSet(updated.unlockedPetIds)
+            prefs[Keys.EQUIPPED_PET] = updated.equippedPetId ?: "NONE"
+            prefs[Keys.DISCOVERED_RELICS] = encodeSet(updated.discoveredRelicIds)
         }
     }
 

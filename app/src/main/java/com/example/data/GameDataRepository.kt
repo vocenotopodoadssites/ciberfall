@@ -17,6 +17,64 @@ class GameDataRepository(private val context: Context) {
         PermanentUpgradeDef("upg_magnet", "Bobina Magnética", "+20% de raio de coleta de gemas e créditos", 5, 65, 50, "+20% Raio")
     )
 
+    val skillTreeNodes: List<SkillTreeNodeDef> = listOf(
+        SkillTreeNodeDef(
+            id = "skill_attack_damage",
+            name = "Sobrecarga de Armas",
+            description = "Amplifica o dano de todos os golpes e disparos contra máquinas.",
+            category = "Combate",
+            maxLevel = 4,
+            pointCostPerLevel = 1,
+            bonusLabel = "+12% Dano/nv"
+        ),
+        SkillTreeNodeDef(
+            id = "skill_dash_speed",
+            name = "Propulsores de Esquiva",
+            description = "Aumenta a velocidade do dash e reduz seu tempo de recarga.",
+            category = "Mobilidade",
+            maxLevel = 3,
+            pointCostPerLevel = 1,
+            bonusLabel = "+22% Vel. Dash / -12% CD"
+        ),
+        SkillTreeNodeDef(
+            id = "skill_double_jump",
+            name = "Salto Duplo Cibernético",
+            description = "Desbloqueia um segundo salto parkour no ar durante o combate.",
+            category = "Parkour",
+            maxLevel = 1,
+            pointCostPerLevel = 2,
+            bonusLabel = "Salto Duplo Aéreo"
+        ),
+        SkillTreeNodeDef(
+            id = "skill_parkour_slam",
+            name = "Impacto Sísmico",
+            description = "Aterrissar de pulos libera uma onda de choque que atordoa máquinas.",
+            category = "Parkour",
+            maxLevel = 1,
+            pointCostPerLevel = 2,
+            bonusLabel = "Onda de Aterrissagem",
+            requiresSkillId = "skill_double_jump"
+        ),
+        SkillTreeNodeDef(
+            id = "skill_shield_guard",
+            name = "Matriz Defensiva",
+            description = "Aumenta o escudo máximo, a regeneração e a absorção de impactos.",
+            category = "Defesa",
+            maxLevel = 3,
+            pointCostPerLevel = 1,
+            bonusLabel = "+25 Escudo / +15% Defesa"
+        ),
+        SkillTreeNodeDef(
+            id = "skill_power_surge",
+            name = "Núcleo de Poder",
+            description = "Fortalece o dano e acelera a recarga da habilidade especial.",
+            category = "Poder",
+            maxLevel = 3,
+            pointCostPerLevel = 2,
+            bonusLabel = "+18% Poder / -10% CD"
+        )
+    )
+
     val achievements: List<AchievementDef> = listOf(
         AchievementDef("ach_first_blood", "Protocolo Zero", "Derrote 25 máquinas hostis no total.", 100, null, 25, "KILLS"),
         AchievementDef("ach_hunter_100", "Exterminador Urbano", "Derrote 150 robôs em combate.", 220, "neon", 150, "KILLS"),
@@ -182,13 +240,53 @@ class GameDataRepository(private val context: Context) {
             }
         }
 
+        val petsRoot = JSONObject(readAsset("data/pets.json"))
+        val petsJson = petsRoot.getJSONArray("pets")
+        val pets = buildList {
+            for (i in 0 until petsJson.length()) {
+                val obj = petsJson.getJSONObject(i)
+                add(
+                    PetDef(
+                        id = obj.getString("id"),
+                        name = obj.getString("name"),
+                        archetype = obj.getString("archetype"),
+                        rarity = CardRarity.valueOf(obj.getString("rarity")),
+                        cost = obj.getInt("cost"),
+                        primaryHex = obj.getString("primaryColor"),
+                        glowHex = obj.getString("glowColor"),
+                        passiveDesc = obj.getString("passiveDesc"),
+                        bonusType = obj.getString("bonusType"),
+                        bonusValue = obj.getDouble("bonusValue").toFloat()
+                    )
+                )
+            }
+        }
+
+        val relicsJson = petsRoot.getJSONArray("relics")
+        val relics = buildList {
+            for (i in 0 until relicsJson.length()) {
+                val obj = relicsJson.getJSONObject(i)
+                add(
+                    RelicDef(
+                        id = obj.getString("id"),
+                        name = obj.getString("name"),
+                        category = obj.getString("category"),
+                        description = obj.getString("description"),
+                        colorHex = obj.getString("colorHex")
+                    )
+                )
+            }
+        }
+
         return GameCatalog(
             classes = classes,
             skins = skins,
             abilities = abilities,
             enemies = enemies,
             bosses = bosses,
-            cards = cards
+            cards = cards,
+            pets = pets,
+            relics = relics
         )
     }
 }

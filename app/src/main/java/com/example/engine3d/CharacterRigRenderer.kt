@@ -67,7 +67,9 @@ class CharacterRigRenderer(private val shader: CyberpunkLitShader) {
         animTime: Float,
         hitFlash: Float,
         shieldActive: Boolean,
-        skinStyle: String? = null
+        skinStyle: String? = null,
+        jumpProgress: Float = 0f,
+        jumpStyle: Int = 0
     ) {
         val rootMat = FloatArray(16)
         Matrix.setIdentityM(rootMat, 0)
@@ -120,10 +122,39 @@ class CharacterRigRenderer(private val shader: CyberpunkLitShader) {
                 attackSwing = -35f
             }
             RigAnimState.JUMP -> {
-                bob = 0.06f
-                legSwing = 34f
-                armSwing = -38f
-                torsoLean = 20f
+                // Acrobatic parkour moves (360° Front-Flip Tuck, Side Vault Roll, Wall-Kick Aerial Spin)
+                val flipFrac = (jumpProgress / 0.56f).coerceIn(0f, 1f)
+                when (jumpStyle % 3) {
+                    0 -> {
+                        val flipDeg = flipFrac * 360f
+                        Matrix.translateM(rootMat, 0, 0f, 1.0f, 0f)
+                        Matrix.rotateM(rootMat, 0, flipDeg, 1f, 0f, 0f)
+                        Matrix.translateM(rootMat, 0, 0f, -1.0f, 0f)
+                        bob = 0.10f
+                        legSwing = 52f
+                        armSwing = -58f
+                        torsoLean = 28f
+                    }
+                    1 -> {
+                        val rollDeg = flipFrac * 360f
+                        Matrix.translateM(rootMat, 0, 0f, 0.95f, 0f)
+                        Matrix.rotateM(rootMat, 0, 26f, 1f, 0f, 0f)
+                        Matrix.rotateM(rootMat, 0, rollDeg, 0f, 0f, 1f)
+                        Matrix.translateM(rootMat, 0, 0f, -0.95f, 0f)
+                        bob = 0.08f
+                        legSwing = -36f
+                        armSwing = -62f
+                        torsoLean = 22f
+                    }
+                    else -> {
+                        val spinDeg = flipFrac * 360f
+                        Matrix.rotateM(rootMat, 0, spinDeg, 0f, 1f, 0f)
+                        bob = 0.08f
+                        legSwing = 48f
+                        armSwing = -48f
+                        torsoLean = 18f
+                    }
+                }
                 attackSwing = 0f
             }
             RigAnimState.HIT -> {
@@ -403,6 +434,79 @@ class CharacterRigRenderer(private val shader: CyberpunkLitShader) {
                 drawBox(vpMatrix, rootMat, 0f, 1.66f, 0.21f, 0f, 0f, 0f, 0.26f, 0.08f, 0.07f, emitCol, emitCol, 1.6f, mesh = MeshPrimitives.beveledBox)
                 drawBox(vpMatrix, rootMat, -0.40f, 1.12f, 0.16f, -35f - walk * 0.4f, 0f, 0f, 0.18f, 0.56f, 0.18f, bodyCol, emitCol, 0.4f, mesh = MeshPrimitives.capsule)
                 drawBox(vpMatrix, rootMat, 0.40f, 1.12f, 0.16f, -35f + walk * 0.4f, 0f, 0f, 0.18f, 0.56f, 0.18f, bodyCol, emitCol, 0.4f, mesh = MeshPrimitives.capsule)
+            }
+        }
+    }
+
+    fun drawPetRig(
+        vpMatrix: FloatArray,
+        archetype: String,
+        x: Float, y: Float, z: Float,
+        yawDeg: Float,
+        primaryCol: FloatArray,
+        glowCol: FloatArray,
+        animTime: Float
+    ) {
+        val rootMat = FloatArray(16)
+        Matrix.setIdentityM(rootMat, 0)
+        Matrix.translateM(rootMat, 0, x, y, z)
+        Matrix.rotateM(rootMat, 0, yawDeg, 0f, 1f, 0f)
+
+        when (archetype) {
+            "OWL_DRONE" -> {
+                val hover = 1.15f + sin(animTime * 4.5f) * 0.16f
+                val flap = sin(animTime * 10f) * 18f
+                drawBox(vpMatrix, rootMat, 0f, hover, 0f, 0f, 0f, 0f, 0.42f, 0.44f, 0.38f, primaryCol, glowCol, 0.3f, mesh = MeshPrimitives.sphere)
+                drawBox(vpMatrix, rootMat, 0f, hover + 0.08f, 0.16f, 0f, 0f, 0f, 0.30f, 0.11f, 0.08f, glowCol, glowCol, 1.6f, mesh = MeshPrimitives.beveledBox)
+                drawBox(vpMatrix, rootMat, -0.34f, hover + 0.04f, 0f, 0f, 0f, 14f + flap, 0.42f, 0.06f, 0.24f, primaryCol, glowCol, 0.7f, mesh = MeshPrimitives.blade)
+                drawBox(vpMatrix, rootMat, 0.34f, hover + 0.04f, 0f, 0f, 0f, -14f - flap, 0.42f, 0.06f, 0.24f, primaryCol, glowCol, 0.7f, mesh = MeshPrimitives.blade)
+                drawBox(vpMatrix, rootMat, 0f, hover, 0f, 0f, animTime * 70f, 0f, 0.62f, 0.35f, 0.62f, glowCol, glowCol, 0.9f, mesh = MeshPrimitives.torus)
+            }
+            "CYBER_CAT" -> {
+                val bob = abs(sin(animTime * 8f)) * 0.05f
+                val trot = sin(animTime * 10f) * 24f
+                drawBox(vpMatrix, rootMat, 0f, 0.40f + bob, 0f, 0f, 0f, 0f, 0.32f, 0.24f, 0.56f, primaryCol, glowCol, 0.3f, mesh = MeshPrimitives.beveledBox)
+                drawBox(vpMatrix, rootMat, 0f, 0.54f + bob, 0.32f, 0f, 0f, 0f, 0.26f, 0.22f, 0.24f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.beveledBox)
+                drawBox(vpMatrix, rootMat, 0f, 0.56f + bob, 0.44f, 0f, 0f, 0f, 0.20f, 0.07f, 0.06f, glowCol, glowCol, 1.7f, mesh = MeshPrimitives.beveledBox)
+                drawBox(vpMatrix, rootMat, -0.09f, 0.72f + bob, 0.32f, 0f, 0f, 12f, 0.09f, 0.16f, 0.09f, glowCol, glowCol, 1.0f, mesh = MeshPrimitives.cone)
+                drawBox(vpMatrix, rootMat, 0.09f, 0.72f + bob, 0.32f, 0f, 0f, -12f, 0.09f, 0.16f, 0.09f, glowCol, glowCol, 1.0f, mesh = MeshPrimitives.cone)
+                drawBox(vpMatrix, rootMat, 0f, 0.58f + bob, -0.34f, -35f + sin(animTime * 6f) * 14f, 0f, 0f, 0.07f, 0.42f, 0.07f, glowCol, glowCol, 1.2f, mesh = MeshPrimitives.capsule)
+                drawBox(vpMatrix, rootMat, -0.12f, 0.20f, 0.20f, trot, 0f, 0f, 0.09f, 0.34f, 0.09f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.capsule)
+                drawBox(vpMatrix, rootMat, 0.12f, 0.20f, 0.20f, -trot, 0f, 0f, 0.09f, 0.34f, 0.09f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.capsule)
+                drawBox(vpMatrix, rootMat, -0.12f, 0.20f, -0.20f, -trot, 0f, 0f, 0.09f, 0.34f, 0.09f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.capsule)
+                drawBox(vpMatrix, rootMat, 0.12f, 0.20f, -0.20f, trot, 0f, 0f, 0.09f, 0.34f, 0.09f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.capsule)
+            }
+            "RAPTOR" -> {
+                val step = sin(animTime * 11f) * 32f
+                val bob = abs(sin(animTime * 11f)) * 0.06f
+                drawBox(vpMatrix, rootMat, 0f, 0.54f + bob, 0f, 22f, 0f, 0f, 0.30f, 0.30f, 0.58f, primaryCol, glowCol, 0.35f, mesh = MeshPrimitives.beveledBox)
+                drawBox(vpMatrix, rootMat, 0f, 0.76f + bob, 0.32f, 10f, 0f, 0f, 0.24f, 0.22f, 0.36f, primaryCol, glowCol, 0.4f, mesh = MeshPrimitives.beveledBox)
+                drawBox(vpMatrix, rootMat, 0f, 0.80f + bob, 0.45f, 0f, 0f, 0f, 0.20f, 0.08f, 0.10f, glowCol, glowCol, 1.6f, mesh = MeshPrimitives.beveledBox)
+                drawBox(vpMatrix, rootMat, 0f, 0.48f + bob, -0.44f, -15f, 0f, 0f, 0.12f, 0.12f, 0.48f, glowCol, glowCol, 1.1f, mesh = MeshPrimitives.blade)
+                drawBox(vpMatrix, rootMat, -0.14f, 0.26f, 0f, step, 0f, 0f, 0.11f, 0.44f, 0.12f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.capsule)
+                drawBox(vpMatrix, rootMat, 0.14f, 0.26f, 0f, -step, 0f, 0f, 0.11f, 0.44f, 0.12f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.capsule)
+            }
+            "ARC_ORB" -> {
+                val hover = 1.25f + sin(animTime * 3.8f) * 0.18f
+                drawBox(vpMatrix, rootMat, 0f, hover, 0f, animTime * 90f, animTime * 120f, 0f, 0.34f, 0.34f, 0.34f, glowCol, glowCol, 1.85f, mesh = MeshPrimitives.octahedron)
+                drawBox(vpMatrix, rootMat, 0f, hover, 0f, 55f, animTime * 110f, 25f, 0.68f, 0.55f, 0.68f, primaryCol, glowCol, 1.15f, mesh = MeshPrimitives.torus)
+                drawBox(vpMatrix, rootMat, 0f, hover, 0f, -55f, -animTime * 95f, -25f, 0.56f, 0.45f, 0.56f, glowCol, glowCol, 1.35f, mesh = MeshPrimitives.torus)
+            }
+            else -> {
+                // QUADRUPED (K-09 Cyber-Lobo)
+                val bob = abs(sin(animTime * 9f)) * 0.05f
+                val trot = sin(animTime * 11f) * 28f
+                drawBox(vpMatrix, rootMat, 0f, 0.44f + bob, 0f, 0f, 0f, 0f, 0.36f, 0.28f, 0.66f, primaryCol, glowCol, 0.3f, mesh = MeshPrimitives.beveledBox)
+                drawBox(vpMatrix, rootMat, 0f, 0.46f + bob, 0f, 0f, 0f, 0f, 0.38f, 0.08f, 0.22f, glowCol, glowCol, 1.1f, mesh = MeshPrimitives.beveledBox)
+                drawBox(vpMatrix, rootMat, 0f, 0.58f + bob, 0.36f, 8f, 0f, 0f, 0.26f, 0.24f, 0.34f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.beveledBox)
+                drawBox(vpMatrix, rootMat, 0f, 0.61f + bob, 0.52f, 0f, 0f, 0f, 0.20f, 0.08f, 0.08f, glowCol, glowCol, 1.7f, mesh = MeshPrimitives.beveledBox)
+                drawBox(vpMatrix, rootMat, -0.09f, 0.76f + bob, 0.28f, 0f, 0f, 10f, 0.08f, 0.16f, 0.08f, glowCol, glowCol, 0.9f, mesh = MeshPrimitives.cone)
+                drawBox(vpMatrix, rootMat, 0.09f, 0.76f + bob, 0.28f, 0f, 0f, -10f, 0.08f, 0.16f, 0.08f, glowCol, glowCol, 0.9f, mesh = MeshPrimitives.cone)
+                drawBox(vpMatrix, rootMat, 0f, 0.54f + bob, -0.40f, -45f + sin(animTime * 8f) * 14f, 0f, 0f, 0.08f, 0.36f, 0.08f, glowCol, glowCol, 1.2f, mesh = MeshPrimitives.blade)
+                drawBox(vpMatrix, rootMat, -0.14f, 0.22f, 0.24f, trot, 0f, 0f, 0.10f, 0.38f, 0.10f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.capsule)
+                drawBox(vpMatrix, rootMat, 0.14f, 0.22f, 0.24f, -trot, 0f, 0f, 0.10f, 0.38f, 0.10f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.capsule)
+                drawBox(vpMatrix, rootMat, -0.14f, 0.22f, -0.24f, -trot, 0f, 0f, 0.10f, 0.38f, 0.10f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.capsule)
+                drawBox(vpMatrix, rootMat, 0.14f, 0.22f, -0.24f, trot, 0f, 0f, 0.10f, 0.38f, 0.10f, primaryCol, zeroEmissive, 0f, mesh = MeshPrimitives.capsule)
             }
         }
     }

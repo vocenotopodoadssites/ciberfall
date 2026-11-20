@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -47,6 +48,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -64,7 +67,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import com.example.data.EvolutionCardDef
 import com.example.data.GraphicsQuality
 import com.example.data.PlayerSaveData
@@ -97,6 +103,7 @@ fun GameplayScreen(
     onSelectCard: (EvolutionCardDef) -> Unit,
     onUpdateQuality: (GraphicsQuality) -> Unit,
     onUpdateCameraDist: (Float) -> Unit,
+    onToggleSound: (Boolean) -> Unit = {},
     onPlayAgain: () -> Unit,
     onExitToMenu: () -> Unit
 ) {
@@ -115,6 +122,47 @@ fun GameplayScreen(
             onHudTick = onHudTick,
             modifier = Modifier.fillMaxSize()
         )
+
+        // 1b. Dark Boss Duel Vignette & Player Damage Flash Feedback
+        if (hud.bossMoodBlend > 0.02f || hud.playerDamageFlash > 0.02f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            0.45f to Color.Transparent,
+                            1.0f to when {
+                                hud.playerDamageFlash > 0.05f -> CrimsonDanger.copy(alpha = 0.42f * hud.playerDamageFlash)
+                                else -> Color(0xFF0A0314).copy(alpha = 0.62f * hud.bossMoodBlend)
+                            }
+                        )
+                    )
+            )
+        }
+
+        // 1c. Projected Floating Combat Damage & Crit Popups
+        if (hud.damagePopups.isNotEmpty()) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val wPx = constraints.maxWidth.toFloat()
+                val hPx = constraints.maxHeight.toFloat()
+                for (popup in hud.damagePopups) {
+                    val px = (popup.normX * wPx - 28f).roundToInt()
+                    val py = (popup.normY * hPx - 14f).roundToInt()
+                    val col = when {
+                        popup.isPlayerHit -> CrimsonDanger
+                        popup.isCrit -> NeonAmber
+                        else -> NeonCyan
+                    }
+                    Text(
+                        text = popup.text,
+                        fontSize = if (popup.isCrit) 16.sp else 13.sp,
+                        fontWeight = if (popup.isCrit || popup.isPlayerHit) FontWeight.ExtraBold else FontWeight.Bold,
+                        color = col.copy(alpha = popup.alpha),
+                        modifier = Modifier.offset { IntOffset(px, py) }
+                    )
+                }
+            }
+        }
 
         // 2. Left-half Free Floating Virtual Joystick Zone (spawns wherever you touch!)
         if (hud.status == RunStatus.PLAYING) {
@@ -227,14 +275,14 @@ fun GameplayScreen(
                                     color = TextPrimary
                                 )
                                 Text(
-                                    text = "ONDA ${hud.waveNumber} • ${hud.kills} ABATES",
+                                    text = "ONDA ${hud.waveNumber} • AMEAÇA ${hud.difficultyTier} • ${hud.kills} ABATES",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = NeonAmber
                                 )
                                 Text(
-                                    text = hud.weatherLabel.uppercase(),
+                                    text = if (hud.activePetName != null) "${hud.weatherLabel.uppercase()} • ${hud.activePetName.uppercase()}" else hud.weatherLabel.uppercase(),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = TextSecondary
+                                    color = if (hud.bossDuelActive) CrimsonDanger else TextSecondary
                                 )
                             }
                         }
@@ -400,6 +448,7 @@ fun GameplayScreen(
                 onResume = onTogglePause,
                 onUpdateQuality = onUpdateQuality,
                 onUpdateCameraDist = onUpdateCameraDist,
+                onToggleSound = onToggleSound,
                 onExit = onExitToMenu
             )
         }
@@ -608,6 +657,7 @@ private fun PauseOverlay(
     onResume: () -> Unit,
     onUpdateQuality: (GraphicsQuality) -> Unit,
     onUpdateCameraDist: (Float) -> Unit,
+    onToggleSound: (Boolean) -> Unit,
     onExit: () -> Unit
 ) {
     Box(
@@ -647,7 +697,21 @@ private fun PauseOverlay(
                     }
                 }
 
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("EFEITOS SONOROS (SFX)", style = MaterialTheme.typography.labelMedium, color = TextPrimary)
+                    Switch(
+                        checked = save.soundEnabled,
+                        onCheckedChange = onToggleSound,
+                        colors = SwitchDefaults.colors(checkedThumbColor = VoidBlack, checkedTrackColor = NeonCyan)
+                    )
+                }
+
+                Spacer(Modifier.height(14.dp))
                 Button(
                     onClick = onResume,
                     modifier = Modifier.fillMaxWidth().height(50.dp),

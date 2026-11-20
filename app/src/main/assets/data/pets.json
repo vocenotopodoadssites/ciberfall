@@ -1,0 +1,108 @@
+{
+  "pets": [
+    {
+      "id": "k9_cyber",
+      "name": "K-09 Cyber-Lobo",
+      "archetype": "QUADRUPED",
+      "rarity": "COMUM",
+      "cost": 180,
+      "primaryColor": "#1E293B",
+      "glowColor": "#38BDF8",
+      "passiveDesc": "+25% raio de coleta e mordida elétrica automática",
+      "bonusType": "MAGNET_STRIKE",
+      "bonusValue": 0.25
+    },
+    {
+      "id": "coruja_bit",
+      "name": "Bit-X Nano-Coruja",
+      "archetype": "OWL_DRONE",
+      "rarity": "RARA",
+      "cost": 280,
+      "primaryColor": "#312E81",
+      "glowColor": "#22D3EE",
+      "passiveDesc": "Dispara rajadas de plasma teleguiadas e +8% vel. ataque",
+      "bonusType": "RAPID_SHOT",
+      "bonusValue": 0.08
+    },
+    {
+      "id": "neko_volt",
+      "name": "Neko-Volt Miau",
+      "archetype": "CYBER_CAT",
+      "rarity": "EPICA",
+      "cost": 380,
+      "primaryColor": "#4C1D95",
+      "glowColor": "#F472B6",
+      "passiveDesc": "+10% agilidade e recarrega +14 de escudo periodicamente",
+      "bonusType": "SHIELD_PULSE",
+      "bonusValue": 14.0
+    },
+    {
+      "id": "mini_raptor",
+      "name": "Rex-04 Mini-Raptor",
+      "archetype": "RAPTOR",
+      "rarity": "EPICA",
+      "cost": 420,
+      "primaryColor": "#451A03",
+      "glowColor": "#F59E0B",
+      "passiveDesc": "+8% chance crítica e ataque incendiário próximo",
+      "bonusType": "CRIT_IGNITE",
+      "bonusValue": 0.08
+    },
+    {
+      "id": "orbe_arcano",
+      "name": "Orbe Serafim",
+      "archetype": "ARC_ORB",
+      "rarity": "LENDARIA",
+      "cost": 550,
+      "primaryColor": "#1E1B4B",
+      "glowColor": "#C084FC",
+      "passiveDesc": "Regenera +2.5 HP/s e dispara raios elétricos em cadeia",
+      "bonusType": "ARC_HEAL",
+      "bonusValue": 2.5
+    }
+  ],
+  "relics": [
+    {
+      "id": "rel_chip_omega",
+      "name": "Chip Neural OMEGA",
+      "category": "Núcleo de IA",
+      "description": "Fragmento criptografado recuperado dos servidores antigos de Neo-Vértice.",
+      "colorHex": "#38BDF8"
+    },
+    {
+      "id": "rel_placa_in12",
+      "name": "Placa Tática IN12",
+      "category": "Blindagem",
+      "description": "Emblema forjado em titânio pertencente ao esquadrão de choque da chuva.",
+      "colorHex": "#EF4444"
+    },
+    {
+      "id": "rel_cristal_hex",
+      "name": "Cristal Hex Arcano",
+      "category": "Energia",
+      "description": "Célula de energia quântica que estabiliza fluxos de teletransporte.",
+      "colorHex": "#A855F7"
+    },
+    {
+      "id": "rel_disco_virus",
+      "name": "Disco Vírus Zero-Day",
+      "category": "Cibernética",
+      "description": "Unidade de memória contendo exploits capazes de parar torres autônomas.",
+      "colorHex": "#22C55E"
+    },
+    {
+      "id": "rel_bateria_bastiao",
+      "name": "Célula Bastião 07",
+      "category": "Defesa",
+      "description": "Capacitor blindado capaz de alimentar escudos de alta densidade.",
+      "colorHex": "#F59E0B"
+    },
+    {
+      "id": "rel_nucleo_seraph",
+      "name": "Asa de Seraph-X",
+      "category": "Protótipo",
+      "description": "Propulsor miniaturizado extraído da linha experimental aérea das máquinas.",
+      "colorHex": "#EC4899"
+    }
+  ]
+}

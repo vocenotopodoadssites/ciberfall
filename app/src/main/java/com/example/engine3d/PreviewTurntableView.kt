@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.CharacterClassDef
+import com.example.data.PetDef
 import com.example.data.SkinDef
 import com.example.data.WeaponType
 import com.example.data.parseHexColor
@@ -30,6 +31,7 @@ import kotlin.random.Random
 class TurntableGLRenderer(private val showLobbyAtmosphere: Boolean) : GLSurfaceView.Renderer {
     @Volatile var classDef: CharacterClassDef? = null
     @Volatile var skinDef: SkinDef? = null
+    @Volatile var petDef: PetDef? = null
     @Volatile var manualYawOffset: Float = 0f
 
     private lateinit var shader: CyberpunkLitShader
@@ -135,6 +137,20 @@ class TurntableGLRenderer(private val showLobbyAtmosphere: Boolean) : GLSurfaceV
             shieldActive = false,
             skinStyle = skinDef?.accentStyle
         )
+
+        petDef?.let { pet ->
+            rigRenderer.drawPetRig(
+                vpMatrix = vpMatrix,
+                archetype = pet.archetype,
+                x = -1.05f,
+                y = 0.06f,
+                z = 0.28f,
+                yawDeg = elapsed * 25f + manualYawOffset + 14f,
+                primaryCol = parseHexColor(pet.primaryHex),
+                glowCol = parseHexColor(pet.glowHex),
+                animTime = elapsed
+            )
+        }
 
         // Character-Specific 3D Lobby VFX
         drawClassSpecificVfx(charDef.weaponType, elapsed, sCol, vCol, wCol)
@@ -267,6 +283,7 @@ class TurntableGLRenderer(private val showLobbyAtmosphere: Boolean) : GLSurfaceV
 fun CharacterTurntable3D(
     classDef: CharacterClassDef,
     skinDef: SkinDef?,
+    petDef: PetDef? = null,
     showLobbyAtmosphere: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -274,6 +291,7 @@ fun CharacterTurntable3D(
     val renderer = remember(showLobbyAtmosphere) { TurntableGLRenderer(showLobbyAtmosphere) }
     renderer.classDef = classDef
     renderer.skinDef = skinDef
+    renderer.petDef = petDef
     renderer.manualYawOffset = dragYaw
 
     AndroidView(

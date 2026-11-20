@@ -8,6 +8,7 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -267,16 +268,21 @@ class NeonfallGLRenderer(
             val ang = sim.elapsedSeconds * 4.2f + (i * 2f * Math.PI.toFloat() / sim.orbitalBladeCount)
             val bx = sim.playerPos.x + cos(ang) * 2.4f
             val bz = sim.playerPos.z + sin(ang) * 2.4f
-            drawMesh(bx, sim.playerPos.y + 1.0f, bz, 0f, Math3D.deg(ang) + 90f, 0f, 0.12f, 0.12f, 0.95f, sim.weaponCol, sim.weaponCol, 1.5f)
+            drawMesh(bx, sim.playerPos.y + 1.0f, bz, 0f, Math3D.deg(ang) + 90f, 0f, 0.14f, 0.14f, 0.98f, sim.weaponCol, sim.weaponCol, 1.55f, mesh = MeshPrimitives.blade)
         }
 
         for (t in sim.turrets) {
+            val rad = Math3D.rad(t.yawDeg)
+            val bx = t.pos.x + sin(rad) * 0.36f
+            val bz = t.pos.z + cos(rad) * 0.36f
             drawMesh(t.pos.x, 0.45f, t.pos.z, 0f, 0f, 0f, 0.55f, 0.9f, 0.55f, floatArrayOf(0.22f, 0.28f, 0.35f), mesh = MeshPrimitives.cylinder)
-            drawMesh(t.pos.x, 1.05f, t.pos.z, 0f, t.yawDeg, 0f, 0.5f, 0.32f, 0.72f, sim.visorCol, sim.visorCol, 1.1f)
+            drawMesh(t.pos.x, 1.05f, t.pos.z, 0f, t.yawDeg, 0f, 0.50f, 0.32f, 0.62f, sim.visorCol, sim.visorCol, 1.05f, mesh = MeshPrimitives.beveledBox)
+            drawMesh(bx, 1.05f, bz, 90f, t.yawDeg, 0f, 0.14f, 0.46f, 0.14f, sim.weaponCol, sim.weaponCol, 1.35f, mesh = MeshPrimitives.cylinder)
         }
 
         for (m in sim.mines) {
-            drawMesh(m.pos.x, 0.12f, m.pos.z, 0f, sim.elapsedSeconds * 90f, 0f, 0.45f, 0.16f, 0.45f, floatArrayOf(0.95f, 0.55f, 0.15f), floatArrayOf(0.95f, 0.55f, 0.15f), 1.4f, mesh = MeshPrimitives.octahedron)
+            drawMesh(m.pos.x, 0.14f, m.pos.z, 0f, sim.elapsedSeconds * 90f, 0f, 0.56f, 0.4f, 0.56f, floatArrayOf(0.95f, 0.42f, 0.15f), floatArrayOf(0.95f, 0.42f, 0.15f), 1.2f, mesh = MeshPrimitives.torus)
+            drawMesh(m.pos.x, 0.18f, m.pos.z, 0f, 0f, 0f, 0.28f, 0.20f, 0.28f, floatArrayOf(1.0f, 0.68f, 0.22f), floatArrayOf(1.0f, 0.68f, 0.22f), 1.6f, mesh = MeshPrimitives.sphere)
         }
     }
 
@@ -307,7 +313,8 @@ class NeonfallGLRenderer(
 
     private fun drawProjectilesAndPickups() {
         for (p in sim.projectiles) {
-            drawMesh(p.pos.x, p.pos.y, p.pos.z, 0f, sim.elapsedSeconds * 240f, 0f, p.scale, p.scale, p.scale * 1.8f, p.color, p.color, 1.8f, mesh = MeshPrimitives.octahedron)
+            val projYaw = Math3D.deg(atan2(p.vx, p.vz))
+            drawMesh(p.pos.x, p.pos.y, p.pos.z, 0f, projYaw, 0f, p.scale * 0.95f, p.scale * 0.95f, p.scale * 2.2f, p.color, p.color, 1.85f, mesh = MeshPrimitives.blade)
         }
         val xpColor = floatArrayOf(0.22f, 0.75f, 0.97f)
         val crColor = floatArrayOf(0.92f, 0.66f, 0.22f)

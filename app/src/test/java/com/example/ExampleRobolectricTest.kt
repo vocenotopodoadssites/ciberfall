@@ -6,6 +6,7 @@ import com.example.data.GameDataRepository
 import com.example.data.PlayerSaveData
 import com.example.data.skinsForClass
 import com.example.engine3d.GameSimulation
+import com.example.engine3d.MeshPrimitives
 import com.example.engine3d.RunStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -88,5 +89,36 @@ class ExampleRobolectricTest {
             }
         }
         assertTrue("Player should climb or vault onto obstacle smoothly", climbedAboveGround)
+    }
+
+    @Test
+    fun `all procedural 3d mesh primitives build cleanly with valid unit normals`() {
+        val meshes = listOf(
+            MeshPrimitives.cube,
+            MeshPrimitives.cylinder,
+            MeshPrimitives.octahedron,
+            MeshPrimitives.ring,
+            MeshPrimitives.disc,
+            MeshPrimitives.groundQuad,
+            MeshPrimitives.sphere,
+            MeshPrimitives.capsule,
+            MeshPrimitives.beveledBox,
+            MeshPrimitives.cone,
+            MeshPrimitives.blade,
+            MeshPrimitives.torus
+        )
+        for (m in meshes) {
+            assertTrue(m.vertexCount >= 6)
+            assertEquals(0, m.vertices.size % 6)
+            var idx = 0
+            while (idx < m.vertices.size) {
+                val nx = m.vertices[idx + 3]
+                val ny = m.vertices[idx + 4]
+                val nz = m.vertices[idx + 5]
+                val len = kotlin.math.sqrt(nx * nx + ny * ny + nz * nz)
+                assertTrue("Normal must be unit length", len in 0.99f..1.01f)
+                idx += 6
+            }
+        }
     }
 }

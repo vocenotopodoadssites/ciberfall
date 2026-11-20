@@ -1,0 +1,9 @@
+NEONFALL - Atualização visual Kotlin/OpenGL ES 3.0
+
+1. Faça backup dos arquivos originais.
+2. Substitua SOMENTE os arquivos MeshPrimitives.kt e CharacterRigRenderer.kt em app/src/main/java/com/example/engine3d/.
+3. Faça Sync/Build no Android Studio e execute.
+4. O pacote, nomes públicos, parâmetros e os enums de animação foram preservados.
+5. O upgrade adiciona malhas (sphere, capsule, beveledBox, cone, blade, torus), melhora corpo, botas, braços, capacete e algumas armas/inimigos.
+6. Ainda não adiciona texturas UV nem muda o renderer de projéteis, que pode estar em outro arquivo (NeonfallGLRenderer.kt ou GameSimulation.kt). O visual é feito com geometria e cores existentes.
+7. Se houver erro de compilação, envie o texto do erro e a linha; não apague outros arquivos do projeto.

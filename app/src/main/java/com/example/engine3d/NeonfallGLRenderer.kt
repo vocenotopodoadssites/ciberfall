@@ -1,5 +1,6 @@
 package com.example.engine3d
 
+import android.content.res.AssetManager
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
@@ -15,12 +16,17 @@ import kotlin.random.Random
 
 class NeonfallGLRenderer(
     private val sim: GameSimulation,
-    private val onHudTick: (HudSnapshot) -> Unit
+    private val onHudTick: (HudSnapshot) -> Unit,
+    private val assets: AssetManager? = null
 ) : GLSurfaceView.Renderer {
 
     private lateinit var shader: CyberpunkLitShader
+    private lateinit var texturedShader: TexturedGlbShader
     private lateinit var lineShader: ParticleLineShader
     private lateinit var rigRenderer: CharacterRigRenderer
+    private val glbModels = mutableMapOf<String, GlbModel>()
+    private val buildingTexIds = mutableMapOf<String, Int>()
+    private var floorTexId: Int = 0
 
     private val projMatrix = FloatArray(16)
     private val viewMatrix = FloatArray(16)
@@ -39,23 +45,44 @@ class NeonfallGLRenderer(
         .asFloatBuffer()
     private val rng = Random(42)
 
-    // Deep slate-blue atmospheric alley fog matching the reference image, shifting to ominous crimson-indigo during 1v1 boss duels
-    private val baseFogColor = floatArrayOf(0.055f, 0.082f, 0.125f)
-    private val bossFogColor = floatArrayOf(0.020f, 0.012f, 0.032f)
-    private val activeFogColor = floatArrayOf(0.055f, 0.082f, 0.125f)
+    private val activeFogColor = floatArrayOf(0.060f, 0.090f, 0.138f)
     private val zeroEmit = floatArrayOf(0f, 0f, 0f)
     private val worldPointScratch = FloatArray(4)
     private val clipPointScratch = FloatArray(4)
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        GLES30.glClearColor(baseFogColor[0], baseFogColor[1], baseFogColor[2], 1f)
+        val initFog = sim.world.stageTheme.fogColor
+        GLES30.glClearColor(initFog[0], initFog[1], initFog[2], 1f)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
 
         shader = CyberpunkLitShader()
+        texturedShader = TexturedGlbShader()
         lineShader = ParticleLineShader()
         rigRenderer = CharacterRigRenderer(shader)
+        assets?.let { assetMgr ->
+            val keys = listOf(
+                "street_lamp",
+                "delorean_time_machine",
+                "combat_car",
+                "drone"
+            )
+            for (key in keys) {
+                GlbModelLoader.load(assetMgr, "models/$key.glb")?.let { model ->
+                    glbModels[key] = model
+                }
+            }
+            floorTexId = GlbModelLoader.loadTexture(assetMgr, "textures/cyberpunk_street_floor.webp")
+            mapOf(
+                "tex_building_industrial" to "textures/building_industrial.webp",
+                "tex_building_market" to "textures/building_market.webp",
+                "tex_building_rowhouse" to "textures/building_rowhouse.webp"
+            ).forEach { (key, path) ->
+                val id = GlbModelLoader.loadTexture(assetMgr, path)
+                if (id != 0) buildingTexIds[key] = id
+            }
+        }
 
         for (i in 0 until maxRainDrops) {
             rainDrops[i][0] = (rng.nextFloat() - 0.5f) * 44f
@@ -77,10 +104,12 @@ class NeonfallGLRenderer(
 
         sim.step(dt)
 
+        val theme = sim.world.stageTheme
         val mood = sim.bossMoodBlend.coerceIn(0f, 1f)
-        activeFogColor[0] = Math3D.lerp(baseFogColor[0], bossFogColor[0], mood)
-        activeFogColor[1] = Math3D.lerp(baseFogColor[1], bossFogColor[1], mood)
-        activeFogColor[2] = Math3D.lerp(baseFogColor[2], bossFogColor[2], mood)
+        // Keep boss arena crisp and clearly lit: subtly shift fog accent without darkening the screen
+        activeFogColor[0] = Math3D.lerp(theme.fogColor[0], (theme.fogColor[0] + 0.045f).coerceAtMost(0.18f), mood)
+        activeFogColor[1] = Math3D.lerp(theme.fogColor[1], theme.fogColor[1] * 0.92f, mood)
+        activeFogColor[2] = Math3D.lerp(theme.fogColor[2], (theme.fogColor[2] + 0.025f).coerceAtMost(0.22f), mood)
 
         GLES30.glClearColor(activeFogColor[0], activeFogColor[1], activeFogColor[2], 1f)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
@@ -104,33 +133,35 @@ class NeonfallGLRenderer(
         GLES30.glUniform3fv(shader.uFogColor, 1, activeFogColor, 0)
         GLES30.glUniform1f(shader.uFogDensity, sim.dynamicFogDensity)
 
-        // Alley lighting palette shifts dramatically toward dark crimson/violet spotlight during 1v1 boss duel
-        GLES30.glUniform3f(shader.uLightPos1, sim.playerPos.x - 11f, 7.5f, sim.playerPos.z - 10f)
+        // Stage biome lighting with high-contrast boss rim boost (preserves full visibility)
+        GLES30.glUniform3f(shader.uLightPos1, sim.playerPos.x - 11f, 8.0f, sim.playerPos.z - 10f)
         GLES30.glUniform3f(
             shader.uLightColor1,
-            Math3D.lerp(0.25f, 0.42f, mood),
-            Math3D.lerp(0.65f, 0.14f, mood),
-            Math3D.lerp(0.92f, 0.58f, mood)
+            Math3D.lerp(theme.light1[0], (theme.light1[0] * 1.15f).coerceAtMost(1.1f), mood),
+            Math3D.lerp(theme.light1[1], (theme.light1[1] * 0.95f).coerceAtMost(1.0f), mood),
+            Math3D.lerp(theme.light1[2], (theme.light1[2] * 1.15f).coerceAtMost(1.1f), mood)
         )
-        GLES30.glUniform3f(shader.uLightPos2, sim.playerPos.x + 12f, 6.5f, sim.playerPos.z + 9f)
+        GLES30.glUniform3f(shader.uLightPos2, sim.playerPos.x + 12f, 7.2f, sim.playerPos.z + 9f)
         GLES30.glUniform3f(
             shader.uLightColor2,
-            Math3D.lerp(0.85f, 1.05f, mood),
-            Math3D.lerp(0.28f, 0.08f, mood),
-            Math3D.lerp(0.62f, 0.24f, mood)
+            Math3D.lerp(theme.light2[0], 1.10f, mood),
+            Math3D.lerp(theme.light2[1], (theme.light2[1] * 0.85f + 0.12f), mood),
+            Math3D.lerp(theme.light2[2], (theme.light2[2] * 0.90f + 0.10f), mood)
         )
-        GLES30.glUniform3f(shader.uLightPos3, sim.playerPos.x - 4f, 4.0f, sim.playerPos.z + 7f)
+        GLES30.glUniform3f(shader.uLightPos3, sim.playerPos.x - 4f, 5.0f, sim.playerPos.z + 7f)
         GLES30.glUniform3f(
             shader.uLightColor3,
-            Math3D.lerp(0.92f, 0.78f, mood),
-            Math3D.lerp(0.56f, 0.16f, mood),
-            Math3D.lerp(0.22f, 0.12f, mood)
+            Math3D.lerp(theme.light3[0], (theme.light3[0] * 1.1f).coerceAtMost(1.05f), mood),
+            Math3D.lerp(theme.light3[1], (theme.light3[1] * 1.0f).coerceAtMost(1.0f), mood),
+            Math3D.lerp(theme.light3[2], (theme.light3[2] + 0.12f).coerceAtMost(1.0f), mood)
         )
 
         drawWetConcreteMossFloor()
         drawWorldObjects()
+        drawGlbWorldModels()
         drawPlayerAndAllies()
         drawEnemies()
+        drawGlbEnemies()
         drawProjectilesAndPickups()
         drawShockwavesAndSparks()
 
@@ -209,17 +240,27 @@ class NeonfallGLRenderer(
     }
 
     private fun drawWetConcreteMossFloor() {
-        // Mode 1: procedural wet stone/concrete tiles + damp moss + reflective puddles
+        // Mode 1: world-space tiled cyberpunk street texture (infinite around player); falls back if unavailable
+        if (floorTexId != 0) {
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, floorTexId)
+            GLES30.glUniform1i(shader.uFloorMap, 2)
+            GLES30.glUniform1i(shader.uHasFloorMap, 1)
+        } else {
+            GLES30.glUniform1i(shader.uHasFloorMap, 0)
+        }
+
         drawMesh(
-            0f, 0f, 0f, 0f, 0f, 0f,
-            92f, 1f, 92f,
-            baseColor = floatArrayOf(0.14f, 0.17f, 0.22f),
+            sim.playerPos.x, 0f, sim.playerPos.z, 0f, 0f, 0f,
+            135f, 1f, 135f,
+            baseColor = sim.world.stageTheme.floorBase,
             shininess = if (sim.graphicsQuality.puddleReflect) 96f else 20f,
             materialMode = 1,
             mesh = MeshPrimitives.groundQuad
         )
+        GLES30.glUniform1i(shader.uHasFloorMap, 0)
 
-        if (sim.graphicsQuality.puddleReflect) {
+        if (sim.graphicsQuality.puddleReflect && floorTexId == 0) {
             for (p in sim.world.puddles) {
                 drawMesh(
                     p.x, 0.015f, p.z, 0f, 0f, 0f,
@@ -236,20 +277,66 @@ class NeonfallGLRenderer(
         }
     }
 
+    private fun resolveGlbKey(obj: WorldBoxObject): String? {
+        val key = obj.modelKey
+        if (key != null && key in glbModels) return key
+        if (obj.kind == WorldPropKind.STREETLAMP && "street_lamp" in glbModels) return "street_lamp"
+        return null
+    }
+
+    private fun bindBuildingTexture(obj: WorldBoxObject): Boolean {
+        if (buildingTexIds.isEmpty()) return false
+        val texId = obj.modelKey?.let { buildingTexIds[it] }
+            ?: buildingTexIds.values.elementAt(kotlin.math.abs(obj.id.hashCode()) % buildingTexIds.size)
+        if (texId == 0) return false
+
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texId)
+        GLES30.glUniform1i(shader.uBuildingMap, 3)
+        GLES30.glUniform1i(shader.uHasBuildingMap, 1)
+
+        val tilesX = kotlin.math.round((obj.sx / 6.8f).coerceAtLeast(1f))
+        val tilesY = if (obj.kind == WorldPropKind.SKYSCRAPER) {
+            kotlin.math.round((obj.sy / 7.2f).coerceAtLeast(2f))
+        } else {
+            1f
+        }
+        GLES30.glUniform2f(shader.uWallTiles, tilesX, tilesY)
+        return true
+    }
+
     private fun drawWorldObjects() {
         for (obj in sim.world.objects) {
+            if (resolveGlbKey(obj) != null) continue
             when (obj.kind) {
                 WorldPropKind.SKYSCRAPER -> {
-                    drawMesh(obj.x, obj.y, obj.z, 0f, obj.yawDeg, 0f, obj.sx, obj.sy, obj.sz, obj.baseColor, shininess = 18f, materialMode = 2)
-                    drawMesh(obj.x, obj.y * 0.8f, obj.z, 0f, obj.yawDeg, 0f, obj.sx + 0.12f, 0.35f, obj.sz + 0.12f, obj.neonColor, obj.neonColor, 0.85f)
+                    val hasTex = bindBuildingTexture(obj)
+                    drawMesh(
+                        obj.x, obj.y, obj.z, 0f, obj.yawDeg, 0f,
+                        obj.sx, obj.sy, obj.sz, obj.baseColor,
+                        shininess = if (hasTex) 28f else 18f,
+                        materialMode = if (hasTex) 5 else 2
+                    )
+                    if (hasTex) GLES30.glUniform1i(shader.uHasBuildingMap, 0)
+                    // 3D rooftop parapet & neon crown bar
+                    drawMesh(obj.x, obj.y + obj.sy * 0.5f + 0.16f, obj.z, 0f, obj.yawDeg, 0f, obj.sx + 0.24f, 0.32f, obj.sz + 0.24f, obj.baseColor, materialMode = 3)
+                    drawMesh(obj.x, obj.y + obj.sy * 0.5f + 0.42f, obj.z, 0f, obj.yawDeg, 0f, 2.2f, 0.85f, 1.8f, floatArrayOf(0.20f, 0.23f, 0.28f), materialMode = 3)
+                    drawMesh(obj.x, obj.y * 1.82f, obj.z, 0f, obj.yawDeg, 0f, obj.sx + 0.14f, 0.28f, obj.sz + 0.14f, obj.neonColor, obj.neonColor, 1.05f)
                 }
                 WorldPropKind.HOUSE_WORKSHOP -> {
-                    drawMesh(obj.x, obj.y, obj.z, 0f, obj.yawDeg, 0f, obj.sx, obj.sy, obj.sz, obj.baseColor, shininess = 16f, materialMode = 2)
-                    drawMesh(obj.x, obj.y + obj.sy * 0.22f, obj.z, 0f, obj.yawDeg, 0f, obj.sx + 0.25f, obj.sy * 0.36f, obj.sz + 0.25f, floatArrayOf(0.16f, 0.20f, 0.25f), shininess = 28f, materialMode = 3)
+                    val hasTex = bindBuildingTexture(obj)
+                    drawMesh(
+                        obj.x, obj.y, obj.z, 0f, obj.yawDeg, 0f,
+                        obj.sx, obj.sy, obj.sz, obj.baseColor,
+                        shininess = if (hasTex) 26f else 16f,
+                        materialMode = if (hasTex) 5 else 2
+                    )
+                    if (hasTex) GLES30.glUniform1i(shader.uHasBuildingMap, 0)
+                    // 3D rooftop rim, HVAC unit, cylindrical water tank & neon corner beacon
+                    drawMesh(obj.x, obj.y + obj.sy * 0.5f + 0.12f, obj.z, 0f, obj.yawDeg, 0f, obj.sx + 0.28f, 0.24f, obj.sz + 0.28f, floatArrayOf(0.16f, 0.20f, 0.25f), shininess = 28f, materialMode = 3)
                     drawMesh(obj.x - obj.sx * 0.22f, obj.y + obj.sy * 0.56f, obj.z, 0f, obj.yawDeg, 0f, 1.3f, 0.85f, 1.1f, floatArrayOf(0.24f, 0.27f, 0.31f), materialMode = 3)
                     drawMesh(obj.x + obj.sx * 0.20f, obj.y + obj.sy * 0.55f, obj.z + 0.4f, 0f, 0f, 0f, 0.65f, 0.75f, 0.65f, floatArrayOf(0.20f, 0.23f, 0.28f), materialMode = 3, mesh = MeshPrimitives.cylinder)
-                    drawMesh(obj.x, 1.1f, obj.z, 0f, obj.yawDeg, 0f, obj.sx * 0.62f, 1.9f, obj.sz + 0.14f, floatArrayOf(0.85f, 0.52f, 0.20f), floatArrayOf(0.92f, 0.56f, 0.22f), 0.78f)
-                    drawMesh(obj.x + obj.sx * 0.48f, obj.y + 0.5f, obj.z + obj.sz * 0.48f, 0f, 0f, 0f, 0.25f, 0.65f, 0.25f, obj.neonColor, obj.neonColor, 1.4f)
+                    drawMesh(obj.x + obj.sx * 0.48f, obj.y + 0.5f, obj.z + obj.sz * 0.48f, 0f, 0f, 0f, 0.24f, 0.65f, 0.24f, obj.neonColor, obj.neonColor, 1.4f)
                 }
                 WorldPropKind.STAIR_PLATFORM -> {
                     drawMesh(obj.x, obj.y, obj.z, 0f, obj.yawDeg, 0f, obj.sx, obj.sy, obj.sz, obj.baseColor, shininess = 18f, materialMode = 4)
@@ -288,6 +375,95 @@ class NeonfallGLRenderer(
                 }
             }
         }
+    }
+
+    private fun applyTexturedShaderEnvironment() {
+        val theme = sim.world.stageTheme
+        val mood = sim.bossMoodBlend.coerceIn(0f, 1f)
+
+        GLES30.glUseProgram(texturedShader.programId)
+        GLES30.glUniform3f(texturedShader.uCameraPos, sim.cameraPos.x, sim.cameraPos.y, sim.cameraPos.z)
+        GLES30.glUniform3fv(texturedShader.uFogColor, 1, activeFogColor, 0)
+        GLES30.glUniform1f(texturedShader.uFogDensity, sim.dynamicFogDensity)
+
+        GLES30.glUniform3f(texturedShader.uLightPos1, sim.playerPos.x - 11f, 8.0f, sim.playerPos.z - 10f)
+        GLES30.glUniform3f(
+            texturedShader.uLightColor1,
+            Math3D.lerp(theme.light1[0], (theme.light1[0] * 1.15f).coerceAtMost(1.1f), mood),
+            Math3D.lerp(theme.light1[1], (theme.light1[1] * 0.95f).coerceAtMost(1.0f), mood),
+            Math3D.lerp(theme.light1[2], (theme.light1[2] * 1.15f).coerceAtMost(1.1f), mood)
+        )
+        GLES30.glUniform3f(texturedShader.uLightPos2, sim.playerPos.x + 12f, 7.2f, sim.playerPos.z + 9f)
+        GLES30.glUniform3f(
+            texturedShader.uLightColor2,
+            Math3D.lerp(theme.light2[0], 1.10f, mood),
+            Math3D.lerp(theme.light2[1], (theme.light2[1] * 0.85f + 0.12f), mood),
+            Math3D.lerp(theme.light2[2], (theme.light2[2] * 0.90f + 0.10f), mood)
+        )
+        GLES30.glUniform3f(texturedShader.uLightPos3, sim.playerPos.x - 4f, 5.0f, sim.playerPos.z + 7f)
+        GLES30.glUniform3f(
+            texturedShader.uLightColor3,
+            Math3D.lerp(theme.light3[0], (theme.light3[0] * 1.1f).coerceAtMost(1.05f), mood),
+            Math3D.lerp(theme.light3[1], (theme.light3[1] * 1.0f).coerceAtMost(1.0f), mood),
+            Math3D.lerp(theme.light3[2], (theme.light3[2] + 0.12f).coerceAtMost(1.0f), mood)
+        )
+    }
+
+    private fun drawGlbWorldModels() {
+        if (glbModels.isEmpty()) return
+        applyTexturedShaderEnvironment()
+
+        var boundKey: String? = null
+        for (obj in sim.world.objects) {
+            val key = resolveGlbKey(obj) ?: continue
+            val model = glbModels[key] ?: continue
+
+            if (key != boundKey) {
+                boundKey = key
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, model.albedoTexId)
+                GLES30.glUniform1i(texturedShader.uAlbedoMap, 0)
+
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, model.emissiveTexId)
+                GLES30.glUniform1i(texturedShader.uEmissiveMap, 1)
+            }
+
+            val scaleX: Float
+            val scaleY: Float
+            val scaleZ: Float
+            if (obj.kind == WorldPropKind.STREETLAMP) {
+                val uniform = obj.sy / model.height
+                scaleX = uniform
+                scaleY = uniform
+                scaleZ = uniform
+            } else {
+                scaleX = obj.sx / model.widthX
+                scaleY = obj.sy / model.height
+                scaleZ = obj.sz / model.depthZ
+            }
+
+            Matrix.setIdentityM(modelMat, 0)
+            Matrix.translateM(modelMat, 0, obj.x, 0f, obj.z)
+            if (obj.yawDeg != 0f) Matrix.rotateM(modelMat, 0, obj.yawDeg, 0f, 1f, 0f)
+            Matrix.scaleM(modelMat, 0, scaleX, scaleY, scaleZ)
+            Matrix.translateM(modelMat, 0, -model.centerX, model.baseOffsetY, -model.centerZ)
+            Matrix.multiplyMM(mvpMat, 0, vpMatrix, 0, modelMat, 0)
+
+            GLES30.glUniformMatrix4fv(texturedShader.uMVP, 1, false, mvpMat, 0)
+            GLES30.glUniformMatrix4fv(texturedShader.uModel, 1, false, modelMat, 0)
+            GLES30.glUniform1f(texturedShader.uEmissiveBoost, if (obj.kind == WorldPropKind.STREETLAMP) 1.65f else 1.25f)
+            GLES30.glUniform3f(
+                texturedShader.uEmissiveTint,
+                Math3D.lerp(1.0f, obj.neonColor[0], 0.25f),
+                Math3D.lerp(1.0f, obj.neonColor[1], 0.25f),
+                Math3D.lerp(1.0f, obj.neonColor[2], 0.25f)
+            )
+            model.draw(texturedShader.aPos, texturedShader.aNorm, texturedShader.aTexCoord)
+        }
+
+        // Restore main lit shader for character/enemy/VFX rendering
+        GLES30.glUseProgram(shader.programId)
     }
 
     private fun drawPlayerAndAllies() {
@@ -358,7 +534,19 @@ class NeonfallGLRenderer(
 
     private fun drawEnemies() {
         GLES30.glUniform1i(shader.uMaterialMode, 0)
+        val hasDroneGlb = "drone" in glbModels
         for (e in sim.enemies) {
+            if (hasDroneGlb && e.def.id == "drone_voador" && !e.isBoss) {
+                // Ground shadow indicator under flying GLB drone
+                val gCol = com.example.data.parseHexColor(e.def.glowHex)
+                drawMesh(
+                    e.pos.x, 0.04f, e.pos.z,
+                    0f, e.animTime * 60f, 0f,
+                    0.75f * e.def.scale, 1f, 0.75f * e.def.scale,
+                    gCol, gCol, 0.9f, alpha = 0.45f, mesh = MeshPrimitives.ring
+                )
+                continue
+            }
             val pCol = com.example.data.parseHexColor(e.def.primaryHex)
             val gCol = com.example.data.parseHexColor(e.def.glowHex)
             val wCol = com.example.data.parseHexColor(e.def.weakpointHex)
@@ -378,6 +566,57 @@ class NeonfallGLRenderer(
                 hitFlash = e.hitFlash,
                 phase2 = e.phase2
             )
+        }
+    }
+
+    private fun drawGlbEnemies() {
+        val droneModel = glbModels["drone"] ?: return
+        var anyDrawn = false
+        val centerY = (droneModel.minY + droneModel.maxY) * 0.5f
+        val maxSpan = maxOf(droneModel.widthX, droneModel.depthZ)
+
+        for (e in sim.enemies) {
+            if (e.isBoss || e.def.id != "drone_voador") continue
+            if (!anyDrawn) {
+                applyTexturedShaderEnvironment()
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, droneModel.albedoTexId)
+                GLES30.glUniform1i(texturedShader.uAlbedoMap, 0)
+
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, droneModel.emissiveTexId)
+                GLES30.glUniform1i(texturedShader.uEmissiveMap, 1)
+                anyDrawn = true
+            }
+
+            val hoverY = e.pos.y + (1.42f + sin(e.animTime * 5.2f) * 0.20f) * e.def.scale
+            val uniformScale = (1.52f * e.def.scale) / maxSpan
+            val bankRoll = sin(e.animTime * 3.4f) * 9f
+
+            Matrix.setIdentityM(modelMat, 0)
+            Matrix.translateM(modelMat, 0, e.pos.x, hoverY, e.pos.z)
+            Matrix.rotateM(modelMat, 0, e.yawDeg, 0f, 1f, 0f)
+            Matrix.rotateM(modelMat, 0, 10f, 1f, 0f, 0f)
+            Matrix.rotateM(modelMat, 0, bankRoll, 0f, 0f, 1f)
+            Matrix.scaleM(modelMat, 0, uniformScale, uniformScale, uniformScale)
+            Matrix.translateM(modelMat, 0, -droneModel.centerX, -centerY, -droneModel.centerZ)
+            Matrix.multiplyMM(mvpMat, 0, vpMatrix, 0, modelMat, 0)
+
+            GLES30.glUniformMatrix4fv(texturedShader.uMVP, 1, false, mvpMat, 0)
+            GLES30.glUniformMatrix4fv(texturedShader.uModel, 1, false, modelMat, 0)
+
+            if (e.hitFlash > 0f) {
+                GLES30.glUniform1f(texturedShader.uEmissiveBoost, 2.8f)
+                GLES30.glUniform3f(texturedShader.uEmissiveTint, 1.0f, 0.35f, 0.35f)
+            } else {
+                GLES30.glUniform1f(texturedShader.uEmissiveBoost, 1.65f)
+                GLES30.glUniform3f(texturedShader.uEmissiveTint, 1.0f, 1.0f, 1.0f)
+            }
+            droneModel.draw(texturedShader.aPos, texturedShader.aNorm, texturedShader.aTexCoord)
+        }
+
+        if (anyDrawn) {
+            GLES30.glUseProgram(shader.programId)
         }
     }
 
@@ -433,9 +672,9 @@ class NeonfallGLRenderer(
         for (i in 0 until dropCount) {
             val d = rainDrops[i]
             d[1] -= 26f * dt
-            if (d[1] < 0f) {
+            if (d[1] < 0f || kotlin.math.abs(d[0] - sim.playerPos.x) > 26f || kotlin.math.abs(d[2] - sim.playerPos.z) > 26f) {
                 d[0] = sim.playerPos.x + (rng.nextFloat() - 0.5f) * 44f
-                d[1] = 18f + rng.nextFloat() * 5f
+                if (d[1] < 0f) d[1] = 18f + rng.nextFloat() * 5f
                 d[2] = sim.playerPos.z + (rng.nextFloat() - 0.5f) * 44f
             }
             rainCoords[idx++] = d[0]

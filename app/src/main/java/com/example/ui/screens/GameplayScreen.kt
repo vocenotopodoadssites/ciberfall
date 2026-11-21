@@ -123,18 +123,15 @@ fun GameplayScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // 1b. Dark Boss Duel Vignette & Player Damage Flash Feedback
-        if (hud.bossMoodBlend > 0.02f || hud.playerDamageFlash > 0.02f) {
+        // 1b. Brief Crimson Player Hit Flash (no dark screen overlay during boss fights)
+        if (hud.playerDamageFlash > 0.05f) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Brush.radialGradient(
-                            0.45f to Color.Transparent,
-                            1.0f to when {
-                                hud.playerDamageFlash > 0.05f -> CrimsonDanger.copy(alpha = 0.42f * hud.playerDamageFlash)
-                                else -> Color(0xFF0A0314).copy(alpha = 0.62f * hud.bossMoodBlend)
-                            }
+                            0.55f to Color.Transparent,
+                            1.0f to CrimsonDanger.copy(alpha = 0.36f * hud.playerDamageFlash)
                         )
                     )
             )
@@ -275,6 +272,11 @@ fun GameplayScreen(
                                     color = TextPrimary
                                 )
                                 Text(
+                                    text = "FASE ${hud.stageNumber} • ${hud.stageName.uppercase()}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = NeonCyan
+                                )
+                                Text(
                                     text = "ONDA ${hud.waveNumber} • AMEAÇA ${hud.difficultyTier} • ${hud.kills} ABATES",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = NeonAmber
@@ -304,73 +306,36 @@ fun GameplayScreen(
                     }
                 }
 
-                // Active Boss Health Bar
-                if (hud.bossName != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = VoidBlack.copy(alpha = 0.86f),
-                        border = BorderStroke(1.5.dp, CrimsonDanger),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "${hud.bossName} ${if (hud.bossPhase2) "// FASE 2" else ""}",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = CrimsonDanger,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "${hud.bossHp.toInt()} / ${hud.bossMaxHp.toInt()}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = NeonAmber
-                                )
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            HudProgressBar(
-                                fraction = hud.bossHp / hud.bossMaxHp.coerceAtLeast(1f),
-                                color = if (hud.bossPhase2) NeonMagenta else CrimsonDanger,
-                                heightDp = 7
-                            )
-                        }
-                    }
-                }
-
                 AnimatedVisibility(
                     visible = hud.statusBannerText != null,
                     enter = fadeIn(),
                     exit = fadeOut()
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = CyberSurface.copy(alpha = 0.90f),
-                        border = BorderStroke(1.dp, NeonAmber),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
+                    Box(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), contentAlignment = Alignment.Center) {
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = VoidBlack.copy(alpha = 0.78f),
+                            border = BorderStroke(1.dp, NeonAmber.copy(alpha = 0.85f))
                         ) {
-                            Icon(Icons.Filled.Warning, contentDescription = null, tint = NeonAmber, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = hud.statusBannerText.orEmpty(),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = TextPrimary
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Filled.Warning, contentDescription = null, tint = NeonAmber, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = hud.statusBannerText.orEmpty(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = TextPrimary
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // Bottom Row: Left subtle hint for floating joystick, Right Action Cluster
+            // Bottom Row: Compact Boss HP bar (when active) or subtle joystick hint on left, Action Cluster on right
             if (hud.status == RunStatus.PLAYING) {
                 Row(
                     modifier = Modifier
@@ -379,12 +344,51 @@ fun GameplayScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    Text(
-                        text = "TOQUE À ESQUERDA PARA MOVER",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextSecondary.copy(alpha = 0.45f),
-                        modifier = Modifier.padding(start = 6.dp, bottom = 6.dp)
-                    )
+                    if (hud.bossName != null) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = VoidBlack.copy(alpha = 0.78f),
+                            border = BorderStroke(1.dp, CrimsonDanger.copy(alpha = 0.9f)),
+                            modifier = Modifier
+                                .widthIn(max = 215.dp)
+                                .padding(end = 8.dp, bottom = 2.dp)
+                                .testTag("boss_health_bar")
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${hud.bossName}${if (hud.bossPhase2) " F2" else ""}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = CrimsonDanger,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = "${hud.bossHp.toInt()}/${hud.bossMaxHp.toInt()}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = NeonAmber
+                                    )
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                HudProgressBar(
+                                    fraction = hud.bossHp / hud.bossMaxHp.coerceAtLeast(1f),
+                                    color = if (hud.bossPhase2) NeonMagenta else CrimsonDanger,
+                                    heightDp = 5
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "TOQUE À ESQUERDA PARA MOVER",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary.copy(alpha = 0.45f),
+                            modifier = Modifier.padding(start = 6.dp, bottom = 6.dp)
+                        )
+                    }
 
                     Column(
                         horizontalAlignment = Alignment.End,

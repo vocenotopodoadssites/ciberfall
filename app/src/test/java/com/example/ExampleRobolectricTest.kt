@@ -175,7 +175,35 @@ class ExampleRobolectricTest {
         assertEquals(RunStatus.PLAYING, sim.status)
         assertTrue(sim.bossesDefeatedInRun >= 1)
         assertTrue(sim.difficultyTier >= 2)
+        assertEquals(2, sim.stageNumber)
+        assertEquals(2, sim.world.currentStage)
+        assertEquals("Porto Carga-09", sim.world.stageName)
+        assertTrue(sim.world.objects.any { it.id.startsWith("d_") })
         assertTrue(!sim.bossDuelActive)
+    }
+
+    @Test
+    fun `unbounded free roam streams new obstacles beyond old boundary without delimitations`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val catalog = GameDataRepository(context).catalog
+        val cacador = catalog.classes.first { it.id == "cacador" }
+        val sim = GameSimulation(catalog, PlayerSaveData(), cacador, cacador.palette)
+
+        sim.maxHp = 10000f
+        sim.hp = 10000f
+        sim.cameraYawDeg = 0f
+        sim.moveInputX = 1.0f // Move east (+X) continuously
+        sim.moveInputY = 0f
+
+        repeat(420) {
+            if (sim.status == RunStatus.LEVEL_UP && sim.pendingChoices.isNotEmpty()) {
+                sim.applyCard(sim.pendingChoices.first())
+            }
+            sim.step(1f / 30f)
+        }
+
+        assertTrue("Player should travel freely past old 35m wall", sim.playerPos.x > 55f)
+        assertTrue("Streamed chunks should keep obstacles populated around player", sim.world.objects.any { it.x > 45f && it.hasCollider })
     }
 
     @Test
@@ -225,5 +253,42 @@ class ExampleRobolectricTest {
         assertTrue(SoundEffect.STRIKE_SLASH in emitted)
         assertTrue(SoundEffect.SHOT_PLASMA in emitted)
         assertTrue(SoundEffect.JUMP_PARKOUR in emitted)
+    }
+
+    @Test
+    fun `all bundled glb assets and randomized building and floor textures load cleanly across stages`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        for (key in listOf("street_lamp", "drone")) {
+            val bytes = context.assets.open("models/$key.glb").use { it.readBytes() }
+            assertTrue("GLB asset $key should not be empty", bytes.size > 1000)
+            val bb = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            assertEquals("Invalid glTF magic for $key", 0x46546C67, bb.int)
+            assertEquals("Expected glTF 2.0 for $key", 2, bb.int)
+        }
+
+        val texPaths = listOf(
+            "textures/cyberpunk_street_floor.webp",
+            "textures/building_industrial.webp",
+            "textures/building_market.webp",
+            "textures/building_rowhouse.webp"
+        )
+        for (path in texPaths) {
+            val bytes = context.assets.open(path).use { it.readBytes() }
+            assertTrue("Texture asset $path should not be empty", bytes.size > 10_000)
+            assertEquals('R'.code.toByte(), bytes[0])
+            assertEquals('I'.code.toByte(), bytes[1])
+            assertEquals('F'.code.toByte(), bytes[2])
+            assertEquals('F'.code.toByte(), bytes[3])
+        }
+
+        val sector = com.example.engine3d.CyberpunkWorldSector()
+        val assignedKeys = mutableSetOf<String>()
+        for (stage in 1..3) {
+            sector.loadStage(stage)
+            sector.objects.mapNotNullTo(assignedKeys) { it.modelKey }
+        }
+        for (key in listOf("tex_building_industrial", "tex_building_market", "tex_building_rowhouse")) {
+            assertTrue("Expected randomized buildings to use $key", key in assignedKeys)
+        }
     }
 }

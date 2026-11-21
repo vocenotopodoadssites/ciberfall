@@ -13,7 +13,7 @@ class NeonfallSurfaceView(
 ) : GLSurfaceView(context) {
     init {
         setEGLContextClientVersion(3)
-        setRenderer(NeonfallGLRenderer(sim, onHudTick))
+        setRenderer(NeonfallGLRenderer(sim, onHudTick, context.assets))
         renderMode = RENDERMODE_CONTINUOUSLY
     }
 }

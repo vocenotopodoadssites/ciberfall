@@ -209,6 +209,8 @@ data class HudSnapshot(
     val playerDamageFlash: Float = 0f,
     val activePetName: String? = null,
     val collectiblesFoundInRun: Int = 0,
+    val stageNumber: Int = 1,
+    val stageName: String = "Beco Neo-Vértice",
     val damagePopups: List<ProjectedDamageText> = emptyList()
 )
 
@@ -363,6 +365,7 @@ class GameSimulation(
     var bossDuelActive: Boolean = false
     var bossMoodBlend: Float = 0f
     var difficultyTier: Int = 1
+    var stageNumber: Int = 1
 
     // Equipped Cyber-Pet Companion & Arena Collectibles
     val equippedPet: PetDef? = save.equippedPetId?.let { id -> catalog.pets.firstOrNull { it.id == id } }
@@ -702,6 +705,7 @@ class GameSimulation(
         }
 
         updatePlayerMovement(dt)
+        world.ensureChunksAround(playerPos.x, playerPos.z)
         updateCombat(dt)
         updateAlliedSystems(dt)
         updatePetCompanion(dt)
@@ -717,8 +721,8 @@ class GameSimulation(
     private fun updateWeatherCycle(dt: Float) {
         val cycleIdx = ((elapsedSeconds / 28f).toInt()) % WeatherPhase.entries.size
         currentWeather = WeatherPhase.entries[cycleIdx]
-        val targetFog = graphicsQuality.fogDensity * currentWeather.fogMultiplier * (1f + bossMoodBlend * 0.45f)
-        val targetRain = currentWeather.rainMultiplier * (1f + bossMoodBlend * 0.40f)
+        val targetFog = graphicsQuality.fogDensity * currentWeather.fogMultiplier * (1f - bossMoodBlend * 0.25f)
+        val targetRain = currentWeather.rainMultiplier * (1f + bossMoodBlend * 0.20f)
         dynamicFogDensity = Math3D.lerp(dynamicFogDensity, targetFog, dt * 0.8f)
         dynamicRainScale = Math3D.lerp(dynamicRainScale, targetRain, dt * 0.8f)
     }
@@ -846,10 +850,6 @@ class GameSimulation(
                 playerYawDeg = Math3D.lerpAngleDeg(playerYawDeg, targetYaw, dt * 14f)
             }
 
-            val limit = world.arenaHalfSize - 1.2f
-            playerPos.x = playerPos.x.coerceIn(-limit, limit)
-            playerPos.z = playerPos.z.coerceIn(-limit, limit)
-
             var pushedClimbableWall = false
             for (box in world.colliders) {
                 if (box.resolveCircleXZAndNormal(playerPos, 0.65f, hitNormalScratch)) {
@@ -948,10 +948,6 @@ class GameSimulation(
                 else -> RigAnimState.IDLE
             }
         }
-
-        val limit = world.arenaHalfSize - 1.2f
-        playerPos.x = playerPos.x.coerceIn(-limit, limit)
-        playerPos.z = playerPos.z.coerceIn(-limit, limit)
     }
 
     private fun updateCameraTransform(dt: Float) {
@@ -1751,13 +1747,56 @@ class GameSimulation(
             bossDuelActive = false
             bossesDefeatedInRun += 1
             difficultyTier = 1 + bossesDefeatedInRun
+            stageNumber = 1 + bossesDefeatedInRun
             nextBossElapsedTarget = elapsedSeconds + 64f
             nextBossKillsTarget = kills + 26 + bossesDefeatedInRun * 6
-            statusBannerText = "${e.def.name} DERROTADO! NÍVEL DE AMEAÇA $difficultyTier!"
-            statusBannerTimer = 3.8f
-            shockwaves.add(ShockwaveVfx(e.pos.x, 0.4f, e.pos.z, 1.0f, 14.0f, 0.7f, 0.7f, floatArrayOf(0.22f, 0.85f, 0.98f)))
-            spawnArenaCollectibleAt(e.pos.x, e.pos.z, preferPet = bossesDefeatedInRun % 2 == 1)
+            advanceToNextStage(e.def.name, preferPet = bossesDefeatedInRun % 2 == 1)
         }
+    }
+
+    private fun advanceToNextStage(defeatedBossName: String, preferPet: Boolean) {
+        // Auto-collect any remaining XP/credit orbs from the defeated boss arena before changing map
+        for (orb in pickups) {
+            if (orb.isCredit) {
+                creditsEarned += (orb.amount * creditBonusMult).toInt().coerceAtLeast(1)
+            } else {
+                gainXp((orb.amount * xpBonusMult).toInt().coerceAtLeast(1))
+            }
+        }
+        pickups.clear()
+        projectiles.clear()
+        turrets.clear()
+        mines.clear()
+        arenaCollectibles.clear()
+        sparks.clear()
+        shockwaves.clear()
+        slashArcs.clear()
+        muzzleFlashes.clear()
+
+        world.loadStage(stageNumber)
+
+        // Place player cleanly at the safe central intersection of the new sector
+        playerPos.x = 0f
+        playerPos.y = 0f
+        playerPos.z = 4f
+        playerVelY = 0f
+        isGrounded = true
+        isClimbing = false
+        climbingBox = null
+        wallPushTimer = 0f
+        currentSupportY = 0f
+        petPos.x = -1.5f
+        petPos.y = 0f
+        petPos.z = 2.8f
+        camTargetY = 1.2f
+        updateCameraTransform(1.0f)
+
+        spawnTimer = 1.6f
+        collectibleSpawnTimer = 26f
+        statusBannerText = "$defeatedBossName DERROTADO! FASE $stageNumber: ${world.stageName.uppercase()}"
+        statusBannerTimer = 4.4f
+        shockwaves.add(ShockwaveVfx(playerPos.x, 0.35f, playerPos.z, 0.8f, 11.5f, 0.65f, 0.65f, world.stageTheme.primaryAccent))
+        spawnArenaCollectibleAt(4.5f, -3.5f, preferPet = preferPet)
     }
 
     private fun damagePlayer(rawDmg: Float, attacker: ActiveEnemy?) {
@@ -1838,8 +1877,8 @@ class GameSimulation(
                 collectibleSpawnTimer = 34f
                 val ang = rng.nextFloat() * 2f * Math.PI.toFloat()
                 val rad = 10f + rng.nextFloat() * 14f
-                val cx = (playerPos.x + cos(ang) * rad).coerceIn(-25f, 25f)
-                val cz = (playerPos.z + sin(ang) * rad).coerceIn(-25f, 25f)
+                val cx = playerPos.x + cos(ang) * rad
+                val cz = playerPos.z + sin(ang) * rad
                 spawnArenaCollectibleAt(cx, cz, preferPet = rng.nextFloat() < 0.35f)
             }
         }
@@ -2013,8 +2052,8 @@ class GameSimulation(
             val def = catalog.enemies.firstOrNull { it.id == pickId } ?: return
             val ang = rng.nextFloat() * 2f * Math.PI.toFloat()
             val rad = 16f + rng.nextFloat() * 8f
-            val sx = (playerPos.x + cos(ang) * rad).coerceIn(-30f, 30f)
-            val sz = (playerPos.z + sin(ang) * rad).coerceIn(-30f, 30f)
+            val sx = playerPos.x + cos(ang) * rad
+            val sz = playerPos.z + sin(ang) * rad
             spawnEnemyAt(def, isBoss = false, sx, sz)
         }
     }
@@ -2032,12 +2071,12 @@ class GameSimulation(
         }
 
         val ang = rng.nextFloat() * 2f * Math.PI.toFloat()
-        val sx = (playerPos.x + cos(ang) * 16f).coerceIn(-28f, 28f)
-        val sz = (playerPos.z + sin(ang) * 16f).coerceIn(-28f, 28f)
+        val sx = playerPos.x + cos(ang) * 14f
+        val sz = playerPos.z + sin(ang) * 14f
         spawnEnemyAt(bossDef, isBoss = true, sx, sz)
         bossBannerTimer = 4.0f
-        statusBannerText = "DUELO SOMBRIO: ${bossDef.name} (AMEAÇA $difficultyTier)"
-        statusBannerTimer = 4.0f
+        statusBannerText = "CHEFE: ${bossDef.name.uppercase()} • DUELO 1v1"
+        statusBannerTimer = 3.6f
         emitSound(SoundEffect.BOSS_ALERT)
         shockwaves.add(ShockwaveVfx(sx, 0.5f, sz, 1f, 13f, 0.7f, 0.7f, parseHexColor(bossDef.glowHex)))
     }
@@ -2084,7 +2123,7 @@ class GameSimulation(
             kills = kills,
             elapsedSeconds = elapsedSeconds,
             waveNumber = waveNumber,
-            weatherLabel = if (bossDuelActive) "Duelo Sombrio" else currentWeather.label,
+            weatherLabel = if (bossDuelActive) "Duelo 1v1" else currentWeather.label,
             dodgeCooldown = dodgeCooldown,
             dodgeMaxCooldown = dodgeMaxCooldown * cooldownMult,
             activeCooldown = activeSkillCooldown,
@@ -2106,6 +2145,8 @@ class GameSimulation(
             playerDamageFlash = (playerHitFlash / 0.20f).coerceIn(0f, 1f),
             activePetName = equippedPet?.name,
             collectiblesFoundInRun = collectiblesFoundInRun,
+            stageNumber = stageNumber,
+            stageName = world.stageName,
             damagePopups = damagePopups
         )
     }

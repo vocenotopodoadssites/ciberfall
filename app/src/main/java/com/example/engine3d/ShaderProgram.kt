@@ -316,8 +316,13 @@ class TexturedGlbShader {
     val uLightColor3: Int
     val uAlbedoMap: Int
     val uEmissiveMap: Int
+    val uBaseColorFactor: Int
+    val uEmissiveFactor: Int
     val uEmissiveTint: Int
     val uEmissiveBoost: Int
+    val uAlphaCutoff: Int
+    val uSimpleMaterial: Int
+    val uUnlit: Int
 
     init {
         val vs = """
@@ -356,8 +361,13 @@ class TexturedGlbShader {
             uniform vec3 uLightColor3;
             uniform sampler2D uAlbedoMap;
             uniform sampler2D uEmissiveMap;
+            uniform vec4 uBaseColorFactor;
+            uniform vec3 uEmissiveFactor;
             uniform vec3 uEmissiveTint;
             uniform float uEmissiveBoost;
+            uniform float uAlphaCutoff;
+            uniform int uSimpleMaterial;
+            uniform int uUnlit;
             out vec4 fragColor;
 
             vec3 calcPointLight(vec3 lPos, vec3 lCol, vec3 norm, vec3 viewDir, vec3 albedo) {
@@ -367,28 +377,49 @@ class TexturedGlbShader {
                 float atten = 1.0 / (1.0 + 0.032 * dist + 0.0045 * dist * dist);
                 float diff = max(dot(norm, lDir), 0.0);
                 vec3 halfVec = normalize(lDir + viewDir);
-                float spec = pow(max(dot(norm, halfVec), 0.0), 32.0) * 0.45;
+                float spec = pow(max(dot(norm, halfVec), 0.0), 32.0) * 0.40;
                 return lCol * (diff * albedo + spec) * atten;
             }
 
             void main() {
-                vec3 norm = normalize(vNormal);
+                vec3 norm = normalize(vNormal + vec3(0.0, 0.0001, 0.0));
                 vec3 viewDir = normalize(uCameraPos - vWorldPos);
-                vec3 albedo = texture(uAlbedoMap, vTexCoord).rgb;
-                vec3 emitSample = texture(uEmissiveMap, vTexCoord).rgb;
 
-                vec3 dirLight = normalize(vec3(0.45, 0.85, 0.35));
-                float ndotl = max(dot(norm, dirLight), 0.0);
-                vec3 lit = albedo * vec3(0.28, 0.34, 0.46) + albedo * vec3(0.45, 0.54, 0.68) * ndotl;
-                lit += calcPointLight(uLightPos1, uLightColor1, norm, viewDir, albedo);
-                lit += calcPointLight(uLightPos2, uLightColor2, norm, viewDir, albedo);
-                lit += calcPointLight(uLightPos3, uLightColor3, norm, viewDir, albedo);
-                lit += emitSample * uEmissiveTint * uEmissiveBoost;
+                vec3 albedo;
+                vec3 emitSample;
+                float outAlpha = 1.0;
+
+                if (uSimpleMaterial == 1) {
+                    // Clean neutral lit clay mode to inspect pure GLB mesh silhouette & proportions
+                    albedo = vec3(0.72, 0.76, 0.82);
+                    emitSample = vec3(0.0);
+                } else {
+                    vec4 texCol = texture(uAlbedoMap, vTexCoord) * uBaseColorFactor;
+                    if (uAlphaCutoff > 0.0 && texCol.a < uAlphaCutoff) {
+                        discard;
+                    }
+                    albedo = texCol.rgb;
+                    outAlpha = texCol.a;
+                    emitSample = texture(uEmissiveMap, vTexCoord).rgb * uEmissiveFactor;
+                }
+
+                vec3 lit;
+                if (uUnlit == 1 && uSimpleMaterial == 0) {
+                    lit = albedo + emitSample * uEmissiveTint * uEmissiveBoost;
+                } else {
+                    vec3 dirLight = normalize(vec3(0.45, 0.85, 0.35));
+                    float ndotl = max(dot(norm, dirLight), 0.0);
+                    lit = albedo * vec3(0.28, 0.34, 0.46) + albedo * vec3(0.48, 0.56, 0.70) * ndotl;
+                    lit += calcPointLight(uLightPos1, uLightColor1, norm, viewDir, albedo);
+                    lit += calcPointLight(uLightPos2, uLightColor2, norm, viewDir, albedo);
+                    lit += calcPointLight(uLightPos3, uLightColor3, norm, viewDir, albedo);
+                    lit += emitSample * uEmissiveTint * uEmissiveBoost;
+                }
 
                 float distCam = length(uCameraPos - vWorldPos);
                 float fogFactor = clamp(exp(-pow(distCam * uFogDensity, 1.55)), 0.08, 1.0);
                 vec3 finalCol = mix(uFogColor, lit, fogFactor);
-                fragColor = vec4(finalCol, 1.0);
+                fragColor = vec4(finalCol, outAlpha);
             }
         """.trimIndent()
 
@@ -409,8 +440,13 @@ class TexturedGlbShader {
         uLightColor3 = GLES30.glGetUniformLocation(programId, "uLightColor3")
         uAlbedoMap = GLES30.glGetUniformLocation(programId, "uAlbedoMap")
         uEmissiveMap = GLES30.glGetUniformLocation(programId, "uEmissiveMap")
+        uBaseColorFactor = GLES30.glGetUniformLocation(programId, "uBaseColorFactor")
+        uEmissiveFactor = GLES30.glGetUniformLocation(programId, "uEmissiveFactor")
         uEmissiveTint = GLES30.glGetUniformLocation(programId, "uEmissiveTint")
         uEmissiveBoost = GLES30.glGetUniformLocation(programId, "uEmissiveBoost")
+        uAlphaCutoff = GLES30.glGetUniformLocation(programId, "uAlphaCutoff")
+        uSimpleMaterial = GLES30.glGetUniformLocation(programId, "uSimpleMaterial")
+        uUnlit = GLES30.glGetUniformLocation(programId, "uUnlit")
     }
 }
 
@@ -435,6 +471,12 @@ private fun compileProgram(vsSrc: String, fsSrc: String): Int {
     GLES30.glAttachShader(prog, vs)
     GLES30.glAttachShader(prog, fs)
     GLES30.glLinkProgram(prog)
+    val linkStatus = IntArray(1)
+    GLES30.glGetProgramiv(prog, GLES30.GL_LINK_STATUS, linkStatus, 0)
+    if (linkStatus[0] == 0) {
+        val log = GLES30.glGetProgramInfoLog(prog)
+        android.util.Log.e("ShaderProgram", "Program link error: $log")
+    }
     GLES30.glDeleteShader(vs)
     GLES30.glDeleteShader(fs)
     return prog

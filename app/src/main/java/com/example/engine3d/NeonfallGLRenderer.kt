@@ -50,6 +50,10 @@ class NeonfallGLRenderer(
     private val worldPointScratch = FloatArray(4)
     private val clipPointScratch = FloatArray(4)
 
+    private var loggedGlbFrameSummary = false
+    @Volatile
+    var glbSimpleMaterialMode: Boolean = false
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         val initFog = sim.world.stageTheme.fogColor
         GLES30.glClearColor(initFog[0], initFog[1], initFog[2], 1f)
@@ -64,15 +68,23 @@ class NeonfallGLRenderer(
         assets?.let { assetMgr ->
             val keys = listOf(
                 "street_lamp",
+                "cyberpunk_building",
+                "cyberpunk_building_1",
+                "cyberpunk_building_2",
+                "industrial_tower",
                 "delorean_time_machine",
                 "combat_car",
                 "drone"
             )
             for (key in keys) {
-                GlbModelLoader.load(assetMgr, "models/$key.glb")?.let { model ->
-                    glbModels[key] = model
+                val loaded = GlbModelLoader.load(assetMgr, "models/$key.glb")
+                if (loaded != null) {
+                    glbModels[key] = loaded
+                } else {
+                    android.util.Log.w("NeonfallGLB", "GLB not available for key=$key (fallback active)")
                 }
             }
+            android.util.Log.i("NeonfallGLB", "GLB models loaded (${glbModels.size}): ${glbModels.keys.joinToString()}")
             floorTexId = GlbModelLoader.loadTexture(assetMgr, "textures/cyberpunk_street_floor.webp")
             mapOf(
                 "tex_building_industrial" to "textures/building_industrial.webp",
@@ -278,10 +290,26 @@ class NeonfallGLRenderer(
     }
 
     private fun resolveGlbKey(obj: WorldBoxObject): String? {
-        val key = obj.modelKey
-        if (key != null && key in glbModels) return key
-        if (obj.kind == WorldPropKind.STREETLAMP && "street_lamp" in glbModels) return "street_lamp"
-        return null
+        val explicit = obj.modelKey
+        if (explicit != null && explicit in glbModels) return explicit
+        return when (obj.kind) {
+            WorldPropKind.STREETLAMP -> if ("street_lamp" in glbModels) "street_lamp" else null
+            WorldPropKind.HOUSE_WORKSHOP -> if ("cyberpunk_building_1" in glbModels) "cyberpunk_building_1" else null
+            WorldPropKind.SKYSCRAPER -> {
+                val candidates = listOf("cyberpunk_building", "cyberpunk_building_2", "industrial_tower")
+                    .filter { it in glbModels }
+                if (candidates.isNotEmpty()) {
+                    candidates[kotlin.math.abs(obj.id.hashCode()) % candidates.size]
+                } else null
+            }
+            WorldPropKind.WRECKED_CAR -> {
+                val candidates = listOf("delorean_time_machine", "combat_car").filter { it in glbModels }
+                if (candidates.isNotEmpty()) {
+                    candidates[kotlin.math.abs(obj.id.hashCode()) % candidates.size]
+                } else null
+            }
+            else -> null
+        }
     }
 
     private fun bindBuildingTexture(obj: WorldBoxObject): Boolean {
@@ -412,57 +440,68 @@ class NeonfallGLRenderer(
     private fun drawGlbWorldModels() {
         if (glbModels.isEmpty()) return
         applyTexturedShaderEnvironment()
+        GLES30.glUniform1i(texturedShader.uSimpleMaterial, if (glbSimpleMaterialMode) 1 else 0)
 
-        var boundKey: String? = null
+        val drawCounts = if (!loggedGlbFrameSummary) mutableMapOf<String, Int>() else null
         for (obj in sim.world.objects) {
             val key = resolveGlbKey(obj) ?: continue
             val model = glbModels[key] ?: continue
 
-            if (key != boundKey) {
-                boundKey = key
-                GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, model.albedoTexId)
-                GLES30.glUniform1i(texturedShader.uAlbedoMap, 0)
-
-                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, model.emissiveTexId)
-                GLES30.glUniform1i(texturedShader.uEmissiveMap, 1)
-            }
-
-            val scaleX: Float
-            val scaleY: Float
-            val scaleZ: Float
-            if (obj.kind == WorldPropKind.STREETLAMP) {
-                val uniform = obj.sy / model.height
-                scaleX = uniform
-                scaleY = uniform
-                scaleZ = uniform
-            } else {
-                scaleX = obj.sx / model.widthX
-                scaleY = obj.sy / model.height
-                scaleZ = obj.sz / model.depthZ
-            }
+            val uniformScale = computeUniformGlbScale(
+                kind = obj.kind,
+                objSx = obj.sx,
+                objSy = obj.sy,
+                objSz = obj.sz,
+                widthX = model.widthX,
+                height = model.height,
+                depthZ = model.depthZ
+            )
 
             Matrix.setIdentityM(modelMat, 0)
-            Matrix.translateM(modelMat, 0, obj.x, 0f, obj.z)
+            val baseY = obj.y - obj.sy * 0.5f
+            Matrix.translateM(modelMat, 0, obj.x, baseY, obj.z)
             if (obj.yawDeg != 0f) Matrix.rotateM(modelMat, 0, obj.yawDeg, 0f, 1f, 0f)
-            Matrix.scaleM(modelMat, 0, scaleX, scaleY, scaleZ)
+            Matrix.scaleM(modelMat, 0, uniformScale, uniformScale, uniformScale)
             Matrix.translateM(modelMat, 0, -model.centerX, model.baseOffsetY, -model.centerZ)
             Matrix.multiplyMM(mvpMat, 0, vpMatrix, 0, modelMat, 0)
 
             GLES30.glUniformMatrix4fv(texturedShader.uMVP, 1, false, mvpMat, 0)
             GLES30.glUniformMatrix4fv(texturedShader.uModel, 1, false, modelMat, 0)
-            GLES30.glUniform1f(texturedShader.uEmissiveBoost, if (obj.kind == WorldPropKind.STREETLAMP) 1.65f else 1.25f)
+            GLES30.glUniform1f(texturedShader.uEmissiveBoost, if (obj.kind == WorldPropKind.STREETLAMP) 1.55f else 1.20f)
             GLES30.glUniform3f(
                 texturedShader.uEmissiveTint,
-                Math3D.lerp(1.0f, obj.neonColor[0], 0.25f),
-                Math3D.lerp(1.0f, obj.neonColor[1], 0.25f),
-                Math3D.lerp(1.0f, obj.neonColor[2], 0.25f)
+                Math3D.lerp(1.0f, obj.neonColor[0], 0.20f),
+                Math3D.lerp(1.0f, obj.neonColor[1], 0.20f),
+                Math3D.lerp(1.0f, obj.neonColor[2], 0.20f)
             )
-            model.draw(texturedShader.aPos, texturedShader.aNorm, texturedShader.aTexCoord)
+
+            for (part in model.parts) {
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, part.albedoTexId)
+                GLES30.glUniform1i(texturedShader.uAlbedoMap, 0)
+
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, part.emissiveTexId)
+                GLES30.glUniform1i(texturedShader.uEmissiveMap, 1)
+
+                GLES30.glUniform4fv(texturedShader.uBaseColorFactor, 1, part.baseColorFactor, 0)
+                GLES30.glUniform3fv(texturedShader.uEmissiveFactor, 1, part.emissiveFactor, 0)
+                GLES30.glUniform1f(texturedShader.uAlphaCutoff, part.alphaCutoff)
+                GLES30.glUniform1i(texturedShader.uUnlit, if (part.unlit) 1 else 0)
+
+                part.draw(texturedShader.aPos, texturedShader.aNorm, texturedShader.aTexCoord)
+            }
+            drawCounts?.set(key, (drawCounts[key] ?: 0) + 1)
         }
 
-        // Restore main lit shader for character/enemy/VFX rendering
+        if (drawCounts != null) {
+            loggedGlbFrameSummary = true
+            val glErr = GLES30.glGetError()
+            android.util.Log.i("NeonfallGLB", "First-frame GLB draws=$drawCounts, glError=$glErr")
+        }
+
+        // Restore default texture unit & main lit shader for character/enemy/VFX rendering
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glUseProgram(shader.programId)
     }
 
@@ -579,13 +618,7 @@ class NeonfallGLRenderer(
             if (e.isBoss || e.def.id != "drone_voador") continue
             if (!anyDrawn) {
                 applyTexturedShaderEnvironment()
-                GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, droneModel.albedoTexId)
-                GLES30.glUniform1i(texturedShader.uAlbedoMap, 0)
-
-                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, droneModel.emissiveTexId)
-                GLES30.glUniform1i(texturedShader.uEmissiveMap, 1)
+                GLES30.glUniform1i(texturedShader.uSimpleMaterial, if (glbSimpleMaterialMode) 1 else 0)
                 anyDrawn = true
             }
 
@@ -612,10 +645,27 @@ class NeonfallGLRenderer(
                 GLES30.glUniform1f(texturedShader.uEmissiveBoost, 1.65f)
                 GLES30.glUniform3f(texturedShader.uEmissiveTint, 1.0f, 1.0f, 1.0f)
             }
-            droneModel.draw(texturedShader.aPos, texturedShader.aNorm, texturedShader.aTexCoord)
+
+            for (part in droneModel.parts) {
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, part.albedoTexId)
+                GLES30.glUniform1i(texturedShader.uAlbedoMap, 0)
+
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, part.emissiveTexId)
+                GLES30.glUniform1i(texturedShader.uEmissiveMap, 1)
+
+                GLES30.glUniform4fv(texturedShader.uBaseColorFactor, 1, part.baseColorFactor, 0)
+                GLES30.glUniform3fv(texturedShader.uEmissiveFactor, 1, part.emissiveFactor, 0)
+                GLES30.glUniform1f(texturedShader.uAlphaCutoff, part.alphaCutoff)
+                GLES30.glUniform1i(texturedShader.uUnlit, if (part.unlit) 1 else 0)
+
+                part.draw(texturedShader.aPos, texturedShader.aNorm, texturedShader.aTexCoord)
+            }
         }
 
         if (anyDrawn) {
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
             GLES30.glUseProgram(shader.programId)
         }
     }
@@ -694,5 +744,33 @@ class NeonfallGLRenderer(
         GLES30.glEnableVertexAttribArray(lineShader.aPos)
         GLES30.glVertexAttribPointer(lineShader.aPos, 3, GLES30.GL_FLOAT, false, 12, rainBuffer)
         GLES30.glDrawArrays(GLES30.GL_LINES, 0, dropCount * 2)
+    }
+
+    companion object {
+        /**
+         * Computes strictly uniform scaling so GLB proportions (width:height:depth) are never stretched
+         * or deformed while keeping bases anchored cleanly on the ground.
+         */
+        fun computeUniformGlbScale(
+            kind: WorldPropKind,
+            objSx: Float,
+            objSy: Float,
+            objSz: Float,
+            widthX: Float,
+            height: Float,
+            depthZ: Float
+        ): Float {
+            val safeW = widthX.coerceAtLeast(0.01f)
+            val safeH = height.coerceAtLeast(0.01f)
+            val safeD = depthZ.coerceAtLeast(0.01f)
+            return when (kind) {
+                WorldPropKind.STREETLAMP -> objSy / safeH
+                WorldPropKind.WRECKED_CAR -> minOf(
+                    maxOf(objSx, objSz) / maxOf(safeW, safeD),
+                    minOf(objSx, objSz) / minOf(safeW, safeD)
+                )
+                else -> minOf(objSx / safeW, objSz / safeD)
+            }
+        }
     }
 }

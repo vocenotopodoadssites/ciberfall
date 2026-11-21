@@ -173,35 +173,38 @@ class CyberpunkWorldSector {
         }
     }
 
-    private fun randomBuildingTexPool(seed: Int): List<String> {
-        val base = listOf("tex_building_industrial", "tex_building_market", "tex_building_rowhouse")
+    private fun glbTowerPool(seed: Int): List<String> {
+        val base = listOf("cyberpunk_building", "cyberpunk_building_2", "industrial_tower")
         val r = Random(seed)
         return (base + base + base).shuffled(r)
     }
 
     private fun buildStage1AlleyCore(t: StageTheme) {
         val mossGreenRail = floatArrayOf(0.22f, 0.38f, 0.28f)
-        val bldTex = randomBuildingTexPool(currentStage * 4099 + 11)
+        val towerPool = glbTowerPool(currentStage * 4099 + 11)
 
-        // Open corner workshops & scattered skyscrapers with randomized cyberpunk facade textures
-        addProp(WorldBoxObject("house_nw", WorldPropKind.HOUSE_WORKSHOP, -16.5f, 2.5f, -15.5f, 6.8f, 5.0f, 5.8f, 0f, t.concreteMid, t.primaryAccent, true, modelKey = bldTex[0]))
-        addProp(WorldBoxObject("house_ne", WorldPropKind.HOUSE_WORKSHOP, 16.5f, 2.5f, -15.5f, 6.8f, 5.0f, 5.8f, 180f, t.concreteMid, t.secondaryAccent, true, modelKey = bldTex[1]))
-        addProp(WorldBoxObject("house_sw", WorldPropKind.HOUSE_WORKSHOP, -16.5f, 2.4f, 16.0f, 6.8f, 4.8f, 5.8f, 90f, t.concreteMid, t.tertiaryAccent, true, modelKey = bldTex[2]))
-        addProp(WorldBoxObject("house_se", WorldPropKind.HOUSE_WORKSHOP, 16.5f, 2.5f, 16.0f, 6.8f, 5.0f, 5.8f, -90f, t.concreteMid, t.primaryAccent, true, modelKey = bldTex[3]))
+        // Isolated visual GLB test building placed in clear open space in front of spawn (0, 0, 4)
+        addProp(WorldBoxObject("visual_test_building", WorldPropKind.HOUSE_WORKSHOP, 0f, 3.0f, -10.5f, 7.4f, 6.0f, 6.4f, 0f, t.concreteMid, t.primaryAccent, true, modelKey = "cyberpunk_building_1"))
 
-        // Corner high-rises framing the block while keeping N/S/E/W streets completely open
-        addProp(WorldBoxObject("bld_nw", WorldPropKind.SKYSCRAPER, -23f, 10.5f, -23f, 8.2f, 21f, 8.2f, 0f, t.concreteDark, t.secondaryAccent, true, modelKey = bldTex[4]))
-        addProp(WorldBoxObject("bld_ne", WorldPropKind.SKYSCRAPER, 23f, 12.0f, -23f, 7.2f, 24f, 7.2f, 90f, t.concreteDark, t.tertiaryAccent, true, modelKey = bldTex[5]))
-        addProp(WorldBoxObject("bld_sw", WorldPropKind.SKYSCRAPER, -23f, 10.5f, 23f, 7.8f, 21f, 7.2f, 180f, t.concreteDark, t.primaryAccent, true, modelKey = bldTex[6]))
-        addProp(WorldBoxObject("bld_se", WorldPropKind.SKYSCRAPER, 23f, 11.5f, 23f, 8.2f, 23f, 8.2f, -90f, t.concreteDark, t.secondaryAccent, true, modelKey = bldTex[7]))
+        // Open corner workshops & scattered skyscrapers with GLB architectural models and wide avenues between them
+        addProp(WorldBoxObject("house_nw", WorldPropKind.HOUSE_WORKSHOP, -16.5f, 2.5f, -15.5f, 6.8f, 5.0f, 5.8f, 0f, t.concreteMid, t.primaryAccent, true, modelKey = "cyberpunk_building_1"))
+        addProp(WorldBoxObject("house_ne", WorldPropKind.HOUSE_WORKSHOP, 16.5f, 2.5f, -15.5f, 6.8f, 5.0f, 5.8f, 180f, t.concreteMid, t.secondaryAccent, true, modelKey = "cyberpunk_building_1"))
+        addProp(WorldBoxObject("house_sw", WorldPropKind.HOUSE_WORKSHOP, -16.5f, 2.4f, 16.0f, 6.8f, 4.8f, 5.8f, 90f, t.concreteMid, t.tertiaryAccent, true, modelKey = "cyberpunk_building_1"))
+        addProp(WorldBoxObject("house_se", WorldPropKind.HOUSE_WORKSHOP, 16.5f, 2.5f, 16.0f, 6.8f, 5.0f, 5.8f, -90f, t.concreteMid, t.primaryAccent, true, modelKey = "cyberpunk_building_1"))
 
-        // Concrete stairways & handrails
+        // Corner high-rises well separated from workshops (zero corner overlap)
+        addProp(WorldBoxObject("bld_nw", WorldPropKind.SKYSCRAPER, -25.0f, 5.5f, -25.0f, 8.4f, 11.0f, 8.4f, 0f, t.concreteDark, t.secondaryAccent, true, modelKey = towerPool[0]))
+        addProp(WorldBoxObject("bld_ne", WorldPropKind.SKYSCRAPER, 25.0f, 6.0f, -25.0f, 8.4f, 12.0f, 8.4f, 90f, t.concreteDark, t.tertiaryAccent, true, modelKey = towerPool[1]))
+        addProp(WorldBoxObject("bld_sw", WorldPropKind.SKYSCRAPER, -25.0f, 5.5f, 25.0f, 8.4f, 11.0f, 8.4f, 180f, t.concreteDark, t.primaryAccent, true, modelKey = towerPool[2]))
+        addProp(WorldBoxObject("bld_se", WorldPropKind.SKYSCRAPER, 25.0f, 6.0f, 25.0f, 8.4f, 12.0f, 8.4f, -90f, t.concreteDark, t.secondaryAccent, true, modelKey = towerPool[3]))
+
+        // Concrete stairways & handrails (kept outside the central visual test zone)
         addProp(WorldBoxObject("stair_n", WorldPropKind.STAIR_PLATFORM, -8.5f, 0.55f, -18.5f, 4.4f, 1.1f, 3.8f, 0f, t.concreteMid, mossGreenRail, true))
         addProp(WorldBoxObject("stair_s", WorldPropKind.STAIR_PLATFORM, 8.5f, 0.55f, 18.5f, 4.4f, 1.1f, 3.8f, 0f, t.concreteMid, mossGreenRail, true))
 
         val rails = listOf(
-            Triple(-5.2f, -9.2f, 0f),
-            Triple(5.8f, -10.0f, 90f),
+            Triple(-9.5f, -9.2f, 0f),
+            Triple(9.5f, -9.2f, 90f),
             Triple(-6.0f, 10.5f, 90f),
             Triple(6.4f, 9.2f, 0f),
             Triple(-21.5f, 4.5f, 90f),
@@ -213,8 +216,8 @@ class CyberpunkWorldSector {
 
         // Shipping containers (preserving cnt_4 at (0, 1.3, -23.0) for climbable rooftop play!)
         val containers = listOf(
-            listOf(-11.5f, 1.3f, -5.5f, 4.8f, 2.6f, 2.2f, 10f, t.metalB, t.secondaryAccent),
-            listOf(12.0f, 1.3f, -6.8f, 4.8f, 2.6f, 2.2f, -16f, t.metalA, t.primaryAccent),
+            listOf(-12.5f, 1.3f, -4.5f, 4.8f, 2.6f, 2.2f, 10f, t.metalB, t.secondaryAccent),
+            listOf(12.5f, 1.3f, -5.8f, 4.8f, 2.6f, 2.2f, -16f, t.metalA, t.primaryAccent),
             listOf(-12.0f, 1.3f, 7.5f, 4.8f, 2.6f, 2.2f, -8f, t.concreteDark, t.tertiaryAccent),
             listOf(11.5f, 1.3f, 7.2f, 4.8f, 2.6f, 2.2f, 18f, t.metalB, t.primaryAccent),
             listOf(0f, 1.3f, -23.0f, 5.2f, 2.6f, 2.2f, 0f, t.metalA, t.secondaryAccent),
@@ -233,8 +236,8 @@ class CyberpunkWorldSector {
 
         // Wrecked / cyber cars (automatically render GLB once delorean_time_machine.glb / combat_car.glb are uploaded)
         val cars = listOf(
-            listOf(-6.8f, 0.55f, 3.8f, 3.3f, 1.1f, 1.65f, 24f, t.primaryAccent, "delorean_time_machine"),
-            listOf(7.5f, 0.55f, -3.5f, 3.3f, 1.1f, 1.65f, -30f, t.tertiaryAccent, "combat_car"),
+            listOf(-7.8f, 0.55f, 4.2f, 3.3f, 1.1f, 1.65f, 24f, t.primaryAccent, "delorean_time_machine"),
+            listOf(8.2f, 0.55f, -2.5f, 3.3f, 1.1f, 1.65f, -30f, t.tertiaryAccent, "combat_car"),
             listOf(-22.5f, 0.55f, -2.0f, 3.3f, 1.1f, 1.65f, 76f, t.secondaryAccent, "delorean_time_machine"),
             listOf(22.5f, 0.55f, 3.5f, 3.3f, 1.1f, 1.65f, -82f, t.primaryAccent, "combat_car")
         )
@@ -250,10 +253,10 @@ class CyberpunkWorldSector {
             )
         }
 
-        // Crates, streetlamps & holo signs
+        // Crates, streetlamps & holo signs (non-overlapping placements)
         val clutter = listOf(
-            Triple(-13.5f, -11.5f, t.primaryAccent),
-            Triple(13.8f, 12.2f, t.tertiaryAccent),
+            Triple(-13.5f, -10.5f, t.primaryAccent),
+            Triple(13.8f, 11.2f, t.tertiaryAccent),
             Triple(-20.0f, -9.5f, t.secondaryAccent),
             Triple(20.0f, 9.5f, t.primaryAccent)
         )
@@ -262,18 +265,18 @@ class CyberpunkWorldSector {
         }
 
         val lamps = listOf(
-            Pair(-9.5f, -15.5f) to t.primaryAccent,
-            Pair(9.5f, -15.5f) to t.secondaryAccent,
-            Pair(-9.5f, 15.5f) to t.tertiaryAccent,
-            Pair(9.5f, 15.5f) to t.primaryAccent
+            Pair(-10.5f, -15.5f) to t.primaryAccent,
+            Pair(10.5f, -15.5f) to t.secondaryAccent,
+            Pair(-10.5f, 15.5f) to t.tertiaryAccent,
+            Pair(10.5f, 15.5f) to t.primaryAccent
         )
         lamps.forEachIndexed { idx, (pos, neon) ->
             val yaw = if (pos.first < 0f) 0f else 180f
-            addProp(WorldBoxObject("lmp_$idx", WorldPropKind.STREETLAMP, pos.first, 2.7f, pos.second, 0.22f, 5.4f, 0.22f, yaw, t.concreteDark, neon, false))
+            addProp(WorldBoxObject("lmp_$idx", WorldPropKind.STREETLAMP, pos.first, 2.7f, pos.second, 0.22f, 5.4f, 0.22f, yaw, t.concreteDark, neon, false, modelKey = "street_lamp"))
         }
 
-        addProp(WorldBoxObject("holo_nw", WorldPropKind.HOLO_BILLBOARD, -16.5f, 6.2f, -11.8f, 1.6f, 4.2f, 0.35f, 0f, t.concreteDark, t.tertiaryAccent, false))
-        addProp(WorldBoxObject("holo_se", WorldPropKind.HOLO_BILLBOARD, 16.5f, 6.2f, 11.8f, 1.6f, 4.2f, 0.35f, 0f, t.concreteDark, t.secondaryAccent, false))
+        addProp(WorldBoxObject("holo_nw", WorldPropKind.HOLO_BILLBOARD, -10.8f, 3.4f, -18.8f, 1.6f, 4.2f, 0.35f, 0f, t.concreteDark, t.tertiaryAccent, false))
+        addProp(WorldBoxObject("holo_se", WorldPropKind.HOLO_BILLBOARD, 10.8f, 3.4f, 18.8f, 1.6f, 4.2f, 0.35f, 0f, t.concreteDark, t.secondaryAccent, false))
 
         puddles.add(PuddleStrip(-4.0f, -3.5f, 3.8f, 2.4f, t.secondaryAccent))
         puddles.add(PuddleStrip(5.2f, 3.2f, 3.2f, 3.8f, t.tertiaryAccent))
@@ -283,11 +286,11 @@ class CyberpunkWorldSector {
 
     private fun buildStage2DockyardCore(t: StageTheme) {
         val safetyRail = floatArrayOf(0.86f, 0.56f, 0.16f)
-        val bldTex = randomBuildingTexPool(currentStage * 6151 + 29)
+        val towerPool = glbTowerPool(currentStage * 6151 + 29)
 
-        // Industrial cargo dockyard: container stacks lining central freight lane & textured buildings
-        addProp(WorldBoxObject("dock_house_w", WorldPropKind.HOUSE_WORKSHOP, -19.5f, 2.6f, 0f, 6.8f, 5.2f, 6.4f, 90f, t.concreteMid, t.primaryAccent, true, modelKey = bldTex[0]))
-        addProp(WorldBoxObject("dock_house_e", WorldPropKind.HOUSE_WORKSHOP, 19.5f, 2.6f, 0f, 6.8f, 5.2f, 6.4f, -90f, t.concreteMid, t.secondaryAccent, true, modelKey = bldTex[1]))
+        // Industrial cargo dockyard: container stacks lining central freight lane & industrial GLB towers
+        addProp(WorldBoxObject("dock_house_w", WorldPropKind.HOUSE_WORKSHOP, -19.5f, 2.6f, 0f, 6.8f, 5.2f, 6.4f, 90f, t.concreteMid, t.primaryAccent, true, modelKey = "cyberpunk_building_1"))
+        addProp(WorldBoxObject("dock_house_e", WorldPropKind.HOUSE_WORKSHOP, 19.5f, 2.6f, 0f, 6.8f, 5.2f, 6.4f, -90f, t.concreteMid, t.secondaryAccent, true, modelKey = "cyberpunk_building_1"))
 
         // Twin container rows (climbable rooftops)
         val dockContainers = listOf(
@@ -333,10 +336,10 @@ class CyberpunkWorldSector {
         addProp(WorldBoxObject("d_crt_1", WorldPropKind.CRATE_CLUSTER, 14.2f, 0.45f, -7.5f, 1.4f, 0.9f, 1.4f, 38f, t.metalB, t.secondaryAccent, true))
 
         // Corner dock industrial towers & cyberpunk buildings (open streets around them)
-        addProp(WorldBoxObject("d_bld_nw", WorldPropKind.SKYSCRAPER, -22.5f, 11.5f, -22f, 7.8f, 23f, 7.0f, 0f, t.concreteDark, t.secondaryAccent, true, modelKey = bldTex[2]))
-        addProp(WorldBoxObject("d_bld_ne", WorldPropKind.SKYSCRAPER, 22.5f, 11.5f, -22f, 7.6f, 23f, 7.6f, 90f, t.concreteDark, t.primaryAccent, true, modelKey = bldTex[3]))
-        addProp(WorldBoxObject("d_bld_sw", WorldPropKind.SKYSCRAPER, -22.5f, 11.0f, 22f, 7.2f, 22f, 7.2f, 180f, t.concreteDark, t.tertiaryAccent, true, modelKey = bldTex[4]))
-        addProp(WorldBoxObject("d_bld_se", WorldPropKind.SKYSCRAPER, 22.5f, 11.5f, 22f, 7.8f, 23f, 7.0f, -90f, t.concreteDark, t.primaryAccent, true, modelKey = bldTex[5]))
+        addProp(WorldBoxObject("d_bld_nw", WorldPropKind.SKYSCRAPER, -22.5f, 11.5f, -22f, 7.8f, 23f, 7.0f, 0f, t.concreteDark, t.secondaryAccent, true, modelKey = towerPool[0]))
+        addProp(WorldBoxObject("d_bld_ne", WorldPropKind.SKYSCRAPER, 22.5f, 11.5f, -22f, 7.6f, 23f, 7.6f, 90f, t.concreteDark, t.primaryAccent, true, modelKey = towerPool[1]))
+        addProp(WorldBoxObject("d_bld_sw", WorldPropKind.SKYSCRAPER, -22.5f, 11.0f, 22f, 7.2f, 22f, 7.2f, 180f, t.concreteDark, t.tertiaryAccent, true, modelKey = towerPool[2]))
+        addProp(WorldBoxObject("d_bld_se", WorldPropKind.SKYSCRAPER, 22.5f, 11.5f, 22f, 7.8f, 23f, 7.0f, -90f, t.concreteDark, t.primaryAccent, true, modelKey = towerPool[3]))
 
         val lampCoords = listOf(
             Pair(-5.5f, -15f) to t.primaryAccent,
@@ -346,7 +349,7 @@ class CyberpunkWorldSector {
         )
         lampCoords.forEachIndexed { idx, (pos, neon) ->
             val yaw = if (pos.first < 0f) 0f else 180f
-            addProp(WorldBoxObject("d_lmp_$idx", WorldPropKind.STREETLAMP, pos.first, 2.7f, pos.second, 0.22f, 5.4f, 0.22f, yaw, t.concreteDark, neon, false))
+            addProp(WorldBoxObject("d_lmp_$idx", WorldPropKind.STREETLAMP, pos.first, 2.7f, pos.second, 0.22f, 5.4f, 0.22f, yaw, t.concreteDark, neon, false, modelKey = "street_lamp"))
         }
 
         puddles.add(PuddleStrip(0f, -6.5f, 4.6f, 2.6f, t.secondaryAccent))
@@ -357,14 +360,14 @@ class CyberpunkWorldSector {
 
     private fun buildStage3CitadelCore(t: StageTheme) {
         val cyberRail = floatArrayOf(0.24f, 0.54f, 0.78f)
-        val bldTex = randomBuildingTexPool(currentStage * 8191 + 43)
+        val towerPool = glbTowerPool(currentStage * 8191 + 43)
 
-        // High-tech Omega Citadel Plaza: textured monoliths, sky-stairs & neon holo barriers
+        // High-tech Omega Citadel Plaza: GLB monoliths, sky-stairs & neon holo barriers
         val monoliths = listOf(
-            listOf(-16.5f, -16.5f, t.primaryAccent, bldTex[0], 0f),
-            listOf(16.5f, -16.5f, t.secondaryAccent, bldTex[1], 90f),
-            listOf(-16.5f, 16.5f, t.secondaryAccent, bldTex[2], 180f),
-            listOf(16.5f, 16.5f, t.primaryAccent, bldTex[3], -90f)
+            listOf(-16.5f, -16.5f, t.primaryAccent, towerPool[0], 0f),
+            listOf(16.5f, -16.5f, t.secondaryAccent, towerPool[1], 90f),
+            listOf(-16.5f, 16.5f, t.secondaryAccent, towerPool[2], 180f),
+            listOf(16.5f, 16.5f, t.primaryAccent, towerPool[3], -90f)
         )
         monoliths.forEachIndexed { idx, m ->
             addProp(
@@ -385,8 +388,8 @@ class CyberpunkWorldSector {
         addProp(WorldBoxObject("c_stair_se", WorldPropKind.STAIR_PLATFORM, 8.5f, 0.65f, 8.5f, 4.2f, 1.3f, 4.2f, 0f, t.concreteMid, cyberRail, true))
 
         // Tech supply pods & workshops on outer plaza
-        addProp(WorldBoxObject("c_hub_n", WorldPropKind.HOUSE_WORKSHOP, 0f, 2.5f, -20.0f, 6.8f, 5.0f, 5.8f, 0f, t.concreteMid, t.primaryAccent, true, modelKey = bldTex[4]))
-        addProp(WorldBoxObject("c_hub_s", WorldPropKind.HOUSE_WORKSHOP, 0f, 2.5f, 20.5f, 6.8f, 5.0f, 5.8f, 180f, t.concreteMid, t.secondaryAccent, true, modelKey = bldTex[5]))
+        addProp(WorldBoxObject("c_hub_n", WorldPropKind.HOUSE_WORKSHOP, 0f, 2.5f, -20.0f, 6.8f, 5.0f, 5.8f, 0f, t.concreteMid, t.primaryAccent, true, modelKey = "cyberpunk_building_1"))
+        addProp(WorldBoxObject("c_hub_s", WorldPropKind.HOUSE_WORKSHOP, 0f, 2.5f, 20.5f, 6.8f, 5.0f, 5.8f, 180f, t.concreteMid, t.secondaryAccent, true, modelKey = "cyberpunk_building_1"))
         addProp(WorldBoxObject("c_cnt_w", WorldPropKind.CONTAINER, -19.5f, 1.3f, 0f, 2.4f, 2.6f, 5.4f, 0f, t.metalA, t.primaryAccent, true))
         addProp(WorldBoxObject("c_cnt_e", WorldPropKind.CONTAINER, 19.5f, 1.3f, 0f, 2.4f, 2.6f, 5.4f, 0f, t.metalB, t.secondaryAccent, true))
 
@@ -413,7 +416,7 @@ class CyberpunkWorldSector {
         )
         lamps.forEachIndexed { idx, (pos, neon) ->
             val yaw = if (pos.first < 0f) 0f else 180f
-            addProp(WorldBoxObject("c_lmp_$idx", WorldPropKind.STREETLAMP, pos.first, 2.7f, pos.second, 0.22f, 5.4f, 0.22f, yaw, t.concreteDark, neon, false))
+            addProp(WorldBoxObject("c_lmp_$idx", WorldPropKind.STREETLAMP, pos.first, 2.7f, pos.second, 0.22f, 5.4f, 0.22f, yaw, t.concreteDark, neon, false, modelKey = "street_lamp"))
         }
         addProp(WorldBoxObject("c_holo_n", WorldPropKind.HOLO_BILLBOARD, -8.5f, 5.6f, -17.5f, 2.0f, 5.5f, 0.35f, 0f, t.concreteDark, t.primaryAccent, false))
         addProp(WorldBoxObject("c_holo_s", WorldPropKind.HOLO_BILLBOARD, 8.5f, 5.6f, 17.5f, 2.0f, 5.5f, 0.35f, 0f, t.concreteDark, t.secondaryAccent, false))
@@ -447,21 +450,21 @@ class CyberpunkWorldSector {
         )
         val firstCorner = rng.nextInt(4)
         val secondCorner = (firstCorner + 1 + rng.nextInt(3)) % 4
-        val texOptions = arrayOf("tex_building_industrial", "tex_building_market", "tex_building_rowhouse")
+        val towerModels = arrayOf("cyberpunk_building", "cyberpunk_building_2", "industrial_tower")
         listOf(firstCorner, secondCorner).forEachIndexed { i, cIdx ->
             val (ox, oz) = cornerOffsets[cIdx]
             val isTower = rng.nextFloat() < 0.56f
             val accent = accents[(cIdx + stage) % accents.size]
             val yaw = listOf(0f, 90f, 180f, -90f)[rng.nextInt(4)]
-            val texKey = texOptions[rng.nextInt(texOptions.size)]
             if (isTower) {
                 val h = 18f + rng.nextFloat() * 10f
+                val tModel = towerModels[rng.nextInt(towerModels.size)]
                 objects.add(
                     WorldBoxObject(
                         "ch_bld_${tag}_$i", WorldPropKind.SKYSCRAPER,
                         cx + ox, h * 0.5f, cz + oz,
                         7.4f, h, 7.2f, yaw, t.concreteDark, accent, true, gx, gz,
-                        modelKey = texKey
+                        modelKey = tModel
                     )
                 )
             } else {
@@ -471,7 +474,7 @@ class CyberpunkWorldSector {
                         "ch_ws_${tag}_$i", WorldPropKind.HOUSE_WORKSHOP,
                         cx + ox, h * 0.5f, cz + oz,
                         6.8f, h, 5.8f, yaw, t.concreteMid, accent, true, gx, gz,
-                        modelKey = texKey
+                        modelKey = "cyberpunk_building_1"
                     )
                 )
             }
@@ -544,7 +547,8 @@ class CyberpunkWorldSector {
             WorldBoxObject(
                 "ch_lmp_${tag}", WorldPropKind.STREETLAMP,
                 cx - 9.5f, 2.7f, cz + 9.5f,
-                0.22f, 5.4f, 0.22f, 0f, t.concreteDark, accents[rng.nextInt(accents.size)], false, gx, gz
+                0.22f, 5.4f, 0.22f, 0f, t.concreteDark, accents[rng.nextInt(accents.size)], false, gx, gz,
+                modelKey = "street_lamp"
             )
         )
         puddles.add(
